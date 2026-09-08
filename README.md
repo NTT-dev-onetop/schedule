@@ -24,3 +24,10 @@ Luồng xác thực dùng `signInWithEmailAndPassword` + `onAuthStateChanged`, h
 
 ## Firebase source
 This build uses the Firebase configuration from `english.zip` (`englishproject-c0131`).
+
+
+## Đăng nhập
+- App hiện chỉ dùng **Đăng nhập bằng Google (Gmail)** qua Firebase Authentication `GoogleAuthProvider` + `signInWithPopup`.
+- Khi người dùng Google đăng nhập lần đầu, app tự tạo hồ sơ trong `users/{uid}`.
+- Trong Firebase Console cần bật **Authentication → Sign-in providers → Google** và thêm domain triển khai vào **Authorized domains**.
+- Firebase config được lấy từ project của `english.zip`: `englishproject-c0131`.

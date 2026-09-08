@@ -20,24 +20,10 @@
     <div class="brand brand-center"><i class="fa-solid fa-graduation-cap"></i> SchoolTask</div>
     <p class="muted center">Quản lý thời khóa biểu & nhiệm vụ học tập</p>
     <div id="authErr" class="auth-error hidden" role="alert"></div>
-    <div class="auth-switch">
-      <button data-auth="login" class="active">Đăng nhập</button>
-      <button data-auth="register">Đăng ký</button>
+    <div class="google-login-wrap">
+      <button id="googleLogin" class="btn primary full google-btn" type="button"><i class="fa-brands fa-google"></i> Đăng nhập bằng Google</button>
+      <p class="muted center auth-note">Chỉ cần tài khoản Gmail/Google, không cần tạo mật khẩu.</p>
     </div>
-
-    <form id="loginForm" class="form">
-      <label>Email<input id="loginEmail" type="email" autocomplete="email" required></label>
-      <label>Mật khẩu<input id="loginPassword" type="password" autocomplete="current-password" required></label>
-      <button class="btn primary full" type="submit">Đăng nhập</button>
-    </form>
-
-    <form id="registerForm" class="form hidden">
-      <label>Họ và tên<input id="regName" maxlength="80" required></label>
-      <label>Lớp<input id="regClass" maxlength="30" placeholder="Ví dụ: 12A1" required></label>
-      <label>Email<input id="regEmail" type="email" autocomplete="email" required></label>
-      <label>Mật khẩu<input id="regPassword" type="password" minlength="6" autocomplete="new-password" required></label>
-      <button class="btn primary full" type="submit">Tạo tài khoản</button>
-    </form>
   </div>
 </section>
 

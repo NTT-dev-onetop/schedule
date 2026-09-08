@@ -1,9 +1,9 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-import { getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import { getAuth,onAuthStateChanged,GoogleAuthProvider,signInWithPopup,signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import { getFirestore,doc,getDoc,setDoc,updateDoc,addDoc,collection,query,orderBy,getDocs,runTransaction,serverTimestamp,arrayUnion } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
-const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app);
+const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app),provider=new GoogleAuthProvider();
 const DAYS=["Thứ 2","Thứ 3","Thứ 4","Thứ 5","Thứ 6","Thứ 7"];
 const PERIODS=[
 ["Sáng - Tiết 1","06:55","07:40"],["Sáng - Tiết 2","07:45","08:30"],["Sáng - Tiết 3","08:55","09:40"],["Sáng - Tiết 4","09:45","10:30"],["Sáng - Tiết 5","10:35","11:20"],
@@ -27,7 +27,7 @@ function clearAuthError(){
  if(e){e.textContent="";e.classList.add("hidden");}
 }
 function toast(msg){const e=$("#toast");e.textContent=msg;e.classList.add("show");clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove("show"),2600)}
-function errorMessage(e){const c=e?.code||"";const map={"auth/invalid-credential":"Email hoặc mật khẩu không đúng.","auth/email-already-in-use":"Email đã được sử dụng.","auth/weak-password":"Mật khẩu cần ít nhất 6 ký tự.","auth/invalid-email":"Email không hợp lệ.","permission-denied":"Bạn không có quyền thực hiện thao tác này."};return map[c]||"Có lỗi xảy ra. Vui lòng thử lại."}
+function errorMessage(e){const c=e?.code||"";const map={"auth/popup-closed-by-user":"Bạn đã đóng cửa sổ đăng nhập.","auth/popup-blocked":"Trình duyệt đã chặn cửa sổ đăng nhập. Hãy cho phép popup rồi thử lại.","auth/cancelled-popup-request":"Yêu cầu đăng nhập đã bị hủy.","auth/unauthorized-domain":"Tên miền hiện tại chưa được thêm vào Authorized domains của Firebase.","auth/network-request-failed":"Không thể kết nối Firebase. Kiểm tra mạng rồi thử lại.","permission-denied":"Bạn không có quyền thực hiện thao tác này."};return map[c]||e?.message||"Đăng nhập thất bại. Vui lòng thử lại."}
 function initials(n="HS"){return n.trim().split(/\s+/).slice(-2).map(x=>x[0]).join("").toUpperCase()||"HS"}
 
 function renderSchedule(){
@@ -119,35 +119,12 @@ function setTaskDefaults(){
 }
 function switchTab(name){$$(".nav").forEach(b=>b.classList.toggle("active",b.dataset.tab===name));$$(".tab").forEach(s=>s.classList.toggle("active",s.id===name+"Tab"));if(name==="leaderboard")leaderboard().catch(e=>toast(errorMessage(e)))}
 
-$$(".auth-switch button").forEach(b=>b.onclick=()=>{$$(".auth-switch button").forEach(x=>x.classList.toggle("active",x===b));$("#loginForm").classList.toggle("hidden",b.dataset.auth!=="login");$("#registerForm").classList.toggle("hidden",b.dataset.auth!=="register")});
-$("#loginForm").onsubmit=async e=>{
- e.preventDefault(); clearAuthError();
- const email=$("#loginEmail").value.trim(), password=$("#loginPassword").value;
- if(!email||!password){showAuthError("Vui lòng nhập đầy đủ email và mật khẩu.");return}
- const btn=$("#loginForm button[type=submit]");btn.disabled=true;btn.textContent="Đang đăng nhập...";
- try{
-   await signInWithEmailAndPassword(auth,email,password);
- }catch(x){
-   console.error("Firebase login error:",x);
-   showAuthError(errorMessage(x));
- }finally{
-   btn.disabled=false;btn.textContent="Đăng nhập";
- }
-};
-$("#registerForm").onsubmit=async e=>{
- e.preventDefault(); clearAuthError();
- const name=$("#regName").value.trim(), cls=$("#regClass").value.trim(), email=$("#regEmail").value.trim(), password=$("#regPassword").value;
- if(!name||!cls||!email||!password){showAuthError("Vui lòng nhập đầy đủ thông tin.");return}
- const btn=$("#registerForm button[type=submit]");btn.disabled=true;btn.textContent="Đang tạo tài khoản...";
- try{
-   const cred=await createUserWithEmailAndPassword(auth,email,password);
-   await setDoc(doc(db,"users",cred.user.uid),{uid:cred.user.uid,email:cred.user.email,displayName:name,className:cls,points:0,weeklyPoints:0,tasksCompleted:0,createdAt:serverTimestamp()});
- }catch(x){
-   console.error("Firebase register error:",x);
-   showAuthError(errorMessage(x));
- }finally{
-   btn.disabled=false;btn.textContent="Tạo tài khoản";
- }
+$("#googleLogin").onclick=async()=>{
+ clearAuthError();
+ const btn=$("#googleLogin"); btn.disabled=true; btn.innerHTML='<i class="fa-brands fa-google"></i> Đang đăng nhập...';
+ try{ await signInWithPopup(auth,provider); }
+ catch(x){ console.error("Firebase Google login error:",x); showAuthError(errorMessage(x)); }
+ finally{ btn.disabled=false; btn.innerHTML='<i class="fa-brands fa-google"></i> Đăng nhập bằng Google'; }
 };
 $("#logout").onclick=()=>signOut(auth);
 $$(".nav").forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
@@ -167,6 +144,11 @@ onAuthStateChanged(auth,async u=>{
    $("#app").classList.remove("hidden");
    $("#headerName").textContent=u.displayName||u.email||"";
    try{
+     const userRef=doc(db,"users",u.uid);
+     const existing=await getDoc(userRef);
+     if(!existing.exists()){
+       await setDoc(userRef,{uid:u.uid,email:u.email||"",displayName:u.displayName||u.email?.split("@")[0]||"Học sinh",className:"",points:0,weeklyPoints:0,tasksCompleted:0,createdAt:serverTimestamp()});
+     }
      await loadProfile();
      fillSubjects();
      renderSchedule();
