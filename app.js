@@ -13,7 +13,7 @@ import { auth, db, googleProvider } from "./firebase-config.js";
 
 const $ = (id) => document.getElementById(id);
 const path = location.pathname.split("/").pop() || "index.html";
-const isAuthPage = ["login.html", "register.html"].includes(path);
+const isAuthPage = false;
 const page = path.replace(".html", "") || "index";
 
 let currentUser = null;
@@ -119,73 +119,87 @@ function shell(title, subtitle, content, actions="") {
   $("logoutBtn").onclick = () => signOut(auth);
 }
 
-function renderAuth(mode) {
-  document.body.innerHTML = `
-    <main class="auth-shell">
-      <section class="auth-card">
-        <a class="auth-logo" href="login.html">📚</a>
-        <h1>Học Tập Cộng Đồng</h1>
-        <p class="subtitle">${mode==="login" ? "Đăng nhập để bắt đầu" : "Tạo tài khoản học tập của bạn"}</p>
-        <form id="authForm" class="auth-form">
-          ${mode==="register" ? `
-            <label>Họ tên<input id="nameInput" type="text" autocomplete="name" placeholder="Nguyễn Văn A" required></label>
-            <label>Lớp học
-              <select id="classInput" required>
-                <option value="">Chọn lớp</option>
-                ${["10T1","10T2","10T3","11T1","11T2","11T3","12T1","12T2","12T3"].map(x=>`<option>${x}</option>`).join("")}
-              </select>
-            </label>` : ""}
-          <label>Email<input id="emailInput" type="email" autocomplete="email" placeholder="email@example.com" required></label>
-          <label>Mật khẩu<input id="passwordInput" type="password" autocomplete="${mode==="login"?"current-password":"new-password"}" minlength="6" placeholder="Tối thiểu 6 ký tự" required></label>
-          ${mode==="register" ? `<label>Xác nhận mật khẩu<input id="confirmInput" type="password" autocomplete="new-password" placeholder="Nhập lại mật khẩu" required></label>` : ""}
-          <div id="authError" class="error" role="alert"></div>
-          <button class="primary wide" type="submit">${mode==="login"?"Đăng nhập":"Đăng ký tài khoản"}</button>
-        </form>
-        ${mode==="login" ? `<button id="googleBtn" class="google-btn">G&nbsp; Đăng nhập bằng Google</button>` : ""}
-        <p class="auth-switch">${mode==="login" ? "Chưa có tài khoản?" : "Đã có tài khoản?"}
-          <a href="${mode==="login"?"register.html":"login.html"}">${mode==="login"?"Đăng ký":"Đăng nhập"}</a>
-        </p>
-        <p class="auth-footer">© ${new Date().getFullYear()} Nguyễn Trung Trực</p>
-      </section>
-    </main>`;
+function renderAuth(mode = "login") {
+  let authMode = mode;
+  const draw = () => {
+    const isRegister = authMode === "register";
+    document.body.innerHTML = `
+      <main class="auth-shell">
+        <section class="auth-card">
+          <div class="auth-logo">📚</div>
+          <h1>Học Tập Cộng Đồng</h1>
+          <p class="subtitle">${isRegister ? "Tạo tài khoản học tập của bạn" : "Đăng nhập để bắt đầu"}</p>
+          <div class="auth-tabs" role="tablist">
+            <button type="button" class="auth-tab ${!isRegister ? "active" : ""}" id="loginTab">Đăng nhập</button>
+            <button type="button" class="auth-tab ${isRegister ? "active" : ""}" id="registerTab">Đăng ký</button>
+          </div>
+          <form id="authForm" class="auth-form">
+            ${isRegister ? `
+              <label>Họ tên<input id="nameInput" type="text" autocomplete="name" placeholder="Nguyễn Văn A" required></label>
+              <label>Lớp học
+                <select id="classInput" required>
+                  <option value="11T1">11T1</option>
+                </select>
+              </label>` : ""}
+            <label>Email<input id="emailInput" type="email" autocomplete="email" placeholder="email@example.com" required></label>
+            <label>Mật khẩu<input id="passwordInput" type="password" autocomplete="${isRegister ? "new-password" : "current-password"}" minlength="6" placeholder="Tối thiểu 6 ký tự" required></label>
+            ${isRegister ? `<label>Xác nhận mật khẩu<input id="confirmInput" type="password" autocomplete="new-password" placeholder="Nhập lại mật khẩu" required></label>` : ""}
+            <div id="authError" class="error" role="alert"></div>
+            <button class="primary wide" type="submit">${isRegister ? "Đăng ký tài khoản" : "Đăng nhập"}</button>
+          </form>
+          ${!isRegister ? `<button id="googleBtn" class="google-btn">G&nbsp; Đăng nhập bằng Google</button>` : ""}
+          <p class="auth-footer">© ${new Date().getFullYear()} Nguyễn Trung Trực</p>
+        </section>
+      </main>`;
 
-  $("authForm").onsubmit = async e => {
-    e.preventDefault();
-    showMessage($("authError"), "");
-    const email = $("emailInput").value.trim();
-    const password = $("passwordInput").value;
-    try {
-      if (mode === "login") {
-        await signInWithEmailAndPassword(auth, email, password);
-      } else {
-        const name = $("nameInput").value.trim();
-        const className = $("classInput").value;
-        const confirm = $("confirmInput").value;
-        if (password !== confirm) throw new Error("Mật khẩu xác nhận không khớp.");
-        const cred = await createUserWithEmailAndPassword(auth, email, password);
-        await updateProfile(cred.user, {displayName:name});
-        await setDoc(doc(db,"users",cred.user.uid), {
-          uid: cred.user.uid, displayName:name, email, className,
-          role:"user", points:0, weeklyPoints:0, completedCount:0, postCount:0,
-          createdAt:serverTimestamp()
-        }, {merge:true});
+    $("loginTab").onclick = () => { authMode = "login"; draw(); };
+    $("registerTab").onclick = () => { authMode = "register"; draw(); };
+
+    $("authForm").onsubmit = async e => {
+      e.preventDefault();
+      showMessage($("authError"), "");
+      const email = $("emailInput").value.trim();
+      const password = $("passwordInput").value;
+      try {
+        if (!isRegister) {
+          await signInWithEmailAndPassword(auth, email, password);
+        } else {
+          const name = $("nameInput").value.trim();
+          const confirm = $("confirmInput").value;
+          if (password !== confirm) throw new Error("Mật khẩu xác nhận không khớp.");
+          const cred = await createUserWithEmailAndPassword(auth, email, password);
+          await updateProfile(cred.user, {displayName:name});
+          await setDoc(doc(db,"users",cred.user.uid), {
+            uid: cred.user.uid, displayName:name, email, className:"11T1",
+            role:"user", points:0, weeklyPoints:0, completedCount:0, postCount:0,
+            createdAt:serverTimestamp()
+          }, {merge:true});
+        }
+      } catch (err) {
+        showMessage($("authError"), friendlyAuthError(err));
       }
-    } catch (err) {
-      showMessage($("authError"), friendlyAuthError(err));
-    }
+    };
+
+    if ($("googleBtn")) $("googleBtn").onclick = async () => {
+      try {
+        const cred = await signInWithPopup(auth, googleProvider);
+        const ref = doc(db,"users",cred.user.uid);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+          await setDoc(ref, {
+            uid:cred.user.uid, displayName:cred.user.displayName || "Học sinh",
+            email:cred.user.email || "", className:"11T1", role:"user", points:0,
+            weeklyPoints:0, completedCount:0, postCount:0, createdAt:serverTimestamp()
+          });
+        } else if (!snap.data().className) {
+          await updateDoc(ref, {className:"11T1"});
+        }
+      } catch(err) { showMessage($("authError"), friendlyAuthError(err)); }
+    };
   };
-  if ($("googleBtn")) $("googleBtn").onclick = async () => {
-    try {
-      const cred = await signInWithPopup(auth, googleProvider);
-      const snap = await getDoc(doc(db,"users",cred.user.uid));
-      if (!snap.exists()) await setDoc(doc(db,"users",cred.user.uid), {
-        uid:cred.user.uid, displayName:cred.user.displayName || "Học sinh",
-        email:cred.user.email || "", role:"user", points:0, weeklyPoints:0,
-        completedCount:0, postCount:0, createdAt:serverTimestamp()
-      });
-    } catch(err) { showMessage($("authError"), friendlyAuthError(err)); }
-  };
+  draw();
 }
+
 function friendlyAuthError(err) {
   const map = {
     "auth/invalid-credential":"Email hoặc mật khẩu không đúng.",
@@ -506,7 +520,7 @@ function closeModal(){if($("modalRoot"))$("modalRoot").innerHTML="";}
 function openProfileModal(){
   $("modalRoot").innerHTML=`<div class="modal-backdrop" id="modalBackdrop"><div class="modal"><div class="modal-head"><h2>✏️ Chỉnh sửa hồ sơ</h2><button id="closeModal">×</button></div>
   <form id="profileForm" class="modal-form"><label>Họ tên<input id="editName" required value="${esc(profile.displayName||"")}"></label>
-  <label>Lớp học<select id="editClass">${["10T1","10T2","10T3","11T1","11T2","11T3","12T1","12T2","12T3"].map(x=>`<option ${x===profile.className?"selected":""}>${x}</option>`).join("")}</select></label>
+  <label>Lớp học<select id="editClass"><option value="11T1" selected>11T1</option></select></label>
   <div id="profileMsg" class="error"></div><button class="primary wide">Lưu thay đổi</button></form></div></div>`;
   $("closeModal").onclick=closeModal;
   $("profileForm").onsubmit=async e=>{e.preventDefault();try{const name=$("editName").value.trim();const cls=$("editClass").value;await updateProfile(currentUser,{displayName:name});await updateDoc(doc(db,"users",currentUser.uid),{displayName:name,className:cls});await loadProfile();closeModal();renderProfile();}catch(err){showMessage($("profileMsg"),err.message);}};
@@ -530,12 +544,11 @@ function renderCurrentPage(){
 
 onAuthStateChanged(auth, async user => {
   currentUser=user;
-  if(isAuthPage){
-    if(user) location.replace("index.html");
-    else renderAuth(page==="register"?"register":"login");
+  if(!user){
+    if(page === "index") renderAuth("login");
+    else location.replace("/");
     return;
   }
-  if(!user){ location.replace("login.html"); return; }
   try {
     await loadProfile();
     if(page==="admin" && !isManager()){location.replace("index.html");return;}
@@ -543,6 +556,6 @@ onAuthStateChanged(auth, async user => {
     renderCurrentPage();
   } catch(err) {
     console.error(err);
-    document.body.innerHTML=`<main class="auth-shell"><section class="auth-card"><h2>Không thể tải tài khoản</h2><p class="error">${esc(err.message)}</p><a class="primary inline-btn" href="login.html">Quay lại đăng nhập</a></section></main>`;
+    document.body.innerHTML=`<main class="auth-shell"><section class="auth-card"><h2>Không thể tải tài khoản</h2><p class="error">${esc(err.message)}</p><a class="primary inline-btn" href="/">Quay lại đăng nhập</a></section></main>`;
   }
 });
