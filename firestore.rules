@@ -3,66 +3,38 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Hàm kiểm tra người dùng đã đăng nhập
     function signedIn() {
       return request.auth != null;
     }
 
-    function isUser(uid) {
-      return signedIn() && request.auth.uid == uid;
-    }
-
+    // Quản lý thông tin người dùng (Users)
     match /users/{uid} {
       allow read: if signedIn();
-      allow create: if isUser(uid)
-        && request.resource.data.uid == uid
-        && request.resource.data.points == 0
-        && request.resource.data.weeklyPoints == 0
-        && request.resource.data.tasksCompleted == 0;
-      allow update: if isUser(uid)
-        && request.resource.data.uid == resource.data.uid
-        && request.resource.data.points >= resource.data.points
-        && request.resource.data.weeklyPoints >= resource.data.weeklyPoints
-        && request.resource.data.tasksCompleted >= resource.data.tasksCompleted;
-      allow delete: if isUser(uid);
+      allow create, update: if signedIn() && request.auth.uid == uid;
+      allow delete: if signedIn() && request.auth.uid == uid;
     }
 
+    // Quản lý thời khóa biểu (Schedules)
     match /schedules/{scheduleId} {
       allow read: if signedIn();
-      allow create, update: if signedIn()
-        && request.resource.data.userId == request.auth.uid;
-      allow delete: if signedIn()
-        && resource.data.userId == request.auth.uid;
+      allow create, update: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
     }
 
+    // Quản lý nhiệm vụ (Tasks)
     match /tasks/{taskId} {
       allow read: if signedIn();
-
-      allow create: if signedIn()
-        && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.status == "pending"
-        && request.resource.data.completedBy.size() == 0;
-
-      allow update: if signedIn() && (
-        resource.data.createdBy == request.auth.uid
-        ||
-        (
-          request.resource.data.createdBy == resource.data.createdBy
-          && request.resource.data.subject == resource.data.subject
-          && request.resource.data.taskContent == resource.data.taskContent
-          && request.resource.data.date == resource.data.date
-          && request.resource.data.period == resource.data.period
-          && request.resource.data.points == resource.data.points
-          && request.resource.data.deadline == resource.data.deadline
-          && request.resource.data.description == resource.data.description
-          && request.resource.data.status == "completed"
-          && request.resource.data.completedBy.hasAny([request.auth.uid])
-        )
-      );
-
-      allow delete: if signedIn()
-        && resource.data.createdBy == request.auth.uid;
+      
+      // Cho phép tạo nếu người tạo chính là tài khoản đang đăng nhập
+      allow create: if signedIn() && request.resource.data.createdBy == request.auth.uid;
+      
+      // Cho phép người tạo sửa/xóa HOẶC người học sinh khác bấm nhận/hoàn thành
+      allow update: if signedIn();
+      allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
     }
 
+    // Bảng xếp hạng (Rankings)
     match /rankings/{weekId} {
       allow read: if signedIn();
       allow write: if false;
