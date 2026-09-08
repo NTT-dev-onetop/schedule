@@ -1,16 +1,116 @@
 <!doctype html>
 <html lang="vi">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="Học Tập Cộng Đồng - quản lý nhiệm vụ học tập và cộng đồng học sinh THPT">
-<title>Trang chủ · Học Tập Cộng Đồng</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0A58CA">
+<meta name="description" content="SchoolTask - Quản lý thời khóa biểu và nhiệm vụ học tập">
+<title>SchoolTask</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+<link rel="stylesheet" href="./styles.css">
 </head>
-<body><noscript>Vui lòng bật JavaScript để sử dụng ứng dụng.</noscript>
-<script type="module" src="app.js"></script>
+<body>
+<div id="toast" class="toast" aria-live="polite"></div>
+
+<section id="auth" class="auth-page">
+  <div class="auth-box">
+    <div class="brand brand-center"><i class="fa-solid fa-graduation-cap"></i> SchoolTask</div>
+    <p class="muted center">Quản lý thời khóa biểu & nhiệm vụ học tập</p>
+    <div class="auth-switch">
+      <button data-auth="login" class="active">Đăng nhập</button>
+      <button data-auth="register">Đăng ký</button>
+    </div>
+
+    <form id="loginForm" class="form">
+      <label>Email<input id="loginEmail" type="email" autocomplete="email" required></label>
+      <label>Mật khẩu<input id="loginPassword" type="password" autocomplete="current-password" required></label>
+      <button class="btn primary full" type="submit">Đăng nhập</button>
+    </form>
+
+    <form id="registerForm" class="form hidden">
+      <label>Họ và tên<input id="regName" maxlength="80" required></label>
+      <label>Lớp<input id="regClass" maxlength="30" placeholder="Ví dụ: 12A1" required></label>
+      <label>Email<input id="regEmail" type="email" autocomplete="email" required></label>
+      <label>Mật khẩu<input id="regPassword" type="password" minlength="6" autocomplete="new-password" required></label>
+      <button class="btn primary full" type="submit">Tạo tài khoản</button>
+    </form>
+  </div>
+</section>
+
+<div id="app" class="hidden">
+<header class="topbar">
+  <div class="brand"><i class="fa-solid fa-graduation-cap"></i> SchoolTask</div>
+  <nav>
+    <button class="nav active" data-tab="schedule"><i class="fa-regular fa-calendar"></i> TKB</button>
+    <button class="nav" data-tab="tasks"><i class="fa-solid fa-list-check"></i> Nhiệm vụ</button>
+    <button class="nav" data-tab="leaderboard"><i class="fa-solid fa-ranking-star"></i> Xếp hạng</button>
+    <button class="nav" data-tab="profile"><i class="fa-regular fa-user"></i> Hồ sơ</button>
+  </nav>
+  <div class="user"><span id="headerName">Học sinh</span><button id="logout" class="icon" title="Đăng xuất"><i class="fa-solid fa-right-from-bracket"></i></button></div>
+</header>
+
+<main class="container">
+<section id="scheduleTab" class="tab active">
+  <div class="head"><div><h1>Thời khóa biểu tuần</h1><p id="weekText" class="muted"></p></div>
+    <div class="actions"><button id="prevWeek" class="btn ghost">‹</button><button id="thisWeek" class="btn ghost">Tuần này</button><button id="nextWeek" class="btn ghost">›</button></div>
+  </div>
+  <div class="card">
+    <div class="table-scroll"><table id="scheduleTable"></table></div>
+    <div class="footer-actions"><button id="saveSchedule" class="btn primary"><i class="fa-solid fa-floppy-disk"></i> Lưu thời khóa biểu</button></div>
+  </div>
+</section>
+
+<section id="tasksTab" class="tab">
+  <div class="head"><div><h1>Nhiệm vụ</h1><p class="muted">Mọi nhiệm vụ đều công khai cho người dùng đã đăng nhập.</p></div>
+    <button id="newTask" class="btn primary"><i class="fa-solid fa-plus"></i> Tạo nhiệm vụ</button>
+  </div>
+  <div class="toolbar card">
+    <div class="seg"><button class="active" data-view="board">Bảng 📊</button><button data-view="list">Danh sách 📝</button></div>
+    <select id="userFilter"><option value="all">Tất cả người dùng</option></select>
+    <select id="subjectFilter"><option value="all">Tất cả môn</option></select>
+    <input id="search" type="search" placeholder="Tìm kiếm nhiệm vụ...">
+  </div>
+  <div class="subtabs"><button class="active" data-period="current">📅 Hiện tại</button><button data-period="past">📦 Đã qua</button></div>
+  <div id="taskArea"></div>
+</section>
+
+<section id="leaderboardTab" class="tab">
+  <div class="head"><div><h1>Bảng xếp hạng</h1><p class="muted">Top 10 điểm tuần cao nhất</p></div></div>
+  <div class="card"><div id="ranking"></div></div>
+</section>
+
+<section id="profileTab" class="tab">
+  <div class="head"><div><h1>Hồ sơ cá nhân</h1><p class="muted">Thông tin và thành tích</p></div></div>
+  <div class="profile-grid">
+    <div class="card profile">
+      <div id="avatar" class="avatar">HS</div><h2 id="profileName">-</h2><p id="profileEmail" class="muted">-</p>
+      <form id="profileForm" class="form"><label>Họ và tên<input id="profileDisplay" maxlength="80" required></label><label>Lớp<input id="profileClass" maxlength="30" required></label><button class="btn primary" type="submit">Lưu hồ sơ</button></form>
+    </div>
+    <div class="stats"><div class="card stat"><span>Tổng điểm</span><b id="points">0</b><i class="fa-solid fa-star"></i></div><div class="card stat"><span>Điểm tuần</span><b id="weekly">0</b><i class="fa-solid fa-trophy"></i></div><div class="card stat"><span>Nhiệm vụ hoàn thành</span><b id="completed">0</b><i class="fa-solid fa-check"></i></div></div>
+  </div>
+</section>
+</main>
+<footer>👨‍💻 Người build/thiết kế: Nguyễn Trung Trực</footer>
+</div>
+
+<dialog id="taskDialog">
+<form id="taskForm" class="dialog">
+  <div class="dialog-head"><h2>Tạo nhiệm vụ</h2><button id="closeDialog" type="button" class="icon">×</button></div>
+  <div class="form-grid">
+    <label>Môn học<select id="taskSubject" required></select></label>
+    <label>Ngày<input id="taskDate" type="date" required></label>
+    <label class="wide">Nhiệm vụ<textarea id="taskContent" rows="3" maxlength="500" required></textarea></label>
+    <label>Buổi & tiết<select id="taskPeriod" required></select></label>
+    <label>Hạn nộp<input id="deadline" type="datetime-local" required></label>
+    <label>Điểm<input id="taskPoints" type="number" min="0" max="100" value="10" required></label>
+    <label class="wide">Mô tả<textarea id="taskDescription" rows="2" maxlength="1000"></textarea></label>
+  </div>
+  <div class="dialog-actions"><button id="cancelDialog" type="button" class="btn ghost">Hủy</button><button class="btn primary" type="submit">Lưu nhiệm vụ</button></div>
+</form>
+</dialog>
+<script type="module" src="./app.js"></script>
 </body>
 </html>

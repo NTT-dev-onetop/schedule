@@ -1,68 +1,71 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
-    function role() { return signedIn() ? request.auth.token.role : null; }
-    function isAdmin() { return role() == 'admin'; }
-    function isAssistant() { return role() in ['assistant', 'admin']; }
-    function isModerator() { return role() in ['moderator', 'assistant', 'admin']; }
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isUser(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
 
     match /users/{uid} {
-      allow read: if signedIn() && (request.auth.uid == uid || isAssistant());
-      allow create: if signedIn()
-        && request.auth.uid == uid
-        && request.resource.data.role == 'user';
-      allow update: if signedIn() && (
-        (request.auth.uid == uid
-          && request.resource.data.role == resource.data.role
-          && request.resource.data.uid == resource.data.uid)
-        || isAdmin()
-      );
-      allow delete: if isAdmin();
+      allow read: if signedIn();
+      allow create: if isUser(uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.points == 0
+        && request.resource.data.weeklyPoints == 0
+        && request.resource.data.tasksCompleted == 0;
+      allow update: if isUser(uid)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.points >= resource.data.points
+        && request.resource.data.weeklyPoints >= resource.data.weeklyPoints
+        && request.resource.data.tasksCompleted >= resource.data.tasksCompleted;
+      allow delete: if isUser(uid);
+    }
+
+    match /schedules/{scheduleId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && request.resource.data.userId == request.auth.uid;
+      allow delete: if signedIn()
+        && resource.data.userId == request.auth.uid;
     }
 
     match /tasks/{taskId} {
-      allow read: if signedIn() && (
-        resource.data.visibility in ['public', 'shared']
-        || resource.data.ownerId == request.auth.uid
-        || isModerator()
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.status == "pending"
+        && request.resource.data.completedBy.size() == 0;
+
+      allow update: if signedIn() && (
+        resource.data.createdBy == request.auth.uid
+        ||
+        (
+          request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.subject == resource.data.subject
+          && request.resource.data.taskContent == resource.data.taskContent
+          && request.resource.data.date == resource.data.date
+          && request.resource.data.period == resource.data.period
+          && request.resource.data.points == resource.data.points
+          && request.resource.data.deadline == resource.data.deadline
+          && request.resource.data.description == resource.data.description
+          && request.resource.data.status == "completed"
+          && request.resource.data.completedBy.hasAny([request.auth.uid])
+        )
       );
-      allow create: if signedIn()
-        && request.resource.data.ownerId == request.auth.uid
-        && request.resource.data.title is string
-        && request.resource.data.title.size() > 0
-        && request.resource.data.visibility in ['private','public','shared'];
-      allow update, delete: if signedIn()
-        && (resource.data.ownerId == request.auth.uid || isModerator());
+
+      allow delete: if signedIn()
+        && resource.data.createdBy == request.auth.uid;
     }
 
-    match /task_completions/{id} {
-      allow read: if signedIn()
-        && (resource.data.uid == request.auth.uid || isAssistant());
-      allow create: if signedIn()
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.taskId is string;
-      allow update, delete: if false;
-    }
-
-    match /rankings/{id} {
+    match /rankings/{weekId} {
       allow read: if signedIn();
       allow write: if false;
-    }
-
-    match /weekly_stats/{week}/users/{uid} {
-      allow read: if signedIn();
-      allow write: if false;
-    }
-
-    match /system_settings/{id} {
-      allow read: if signedIn();
-      allow write: if isAdmin();
-    }
-
-    match /notifications/{id} {
-      allow read: if signedIn();
-      allow write: if isAssistant();
     }
   }
 }
