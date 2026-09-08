@@ -1,6 +1,6 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
-import { getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
-import { getFirestore,doc,getDoc,setDoc,updateDoc,addDoc,collection,query,orderBy,getDocs,runTransaction,serverTimestamp,arrayUnion } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import { getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import { getFirestore,doc,getDoc,setDoc,updateDoc,addDoc,collection,query,orderBy,getDocs,runTransaction,serverTimestamp,arrayUnion } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app);
@@ -16,6 +16,16 @@ const iso=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),d
 function localDate(s){const [y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d)}
 function monday(d){const x=new Date(d);x.setHours(0,0,0,0);const n=x.getDay();x.setDate(x.getDate()+(n===0?-6:1-n));return x}
 function escape(v=""){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
+function showAuthError(msg){
+ const e=$("#authErr");
+ if(!e)return;
+ e.textContent=msg;
+ e.classList.remove("hidden");
+}
+function clearAuthError(){
+ const e=$("#authErr");
+ if(e){e.textContent="";e.classList.add("hidden");}
+}
 function toast(msg){const e=$("#toast");e.textContent=msg;e.classList.add("show");clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove("show"),2600)}
 function errorMessage(e){const c=e?.code||"";const map={"auth/invalid-credential":"Email hoặc mật khẩu không đúng.","auth/email-already-in-use":"Email đã được sử dụng.","auth/weak-password":"Mật khẩu cần ít nhất 6 ký tự.","auth/invalid-email":"Email không hợp lệ.","permission-denied":"Bạn không có quyền thực hiện thao tác này."};return map[c]||"Có lỗi xảy ra. Vui lòng thử lại."}
 function initials(n="HS"){return n.trim().split(/\s+/).slice(-2).map(x=>x[0]).join("").toUpperCase()||"HS"}
@@ -90,7 +100,7 @@ async function completeTask(id){
  });
  await loadProfile();await loadTasks();toast("Đã hoàn thành nhiệm vụ");
 }
-async function deleteTask(id){if(!confirm("Xóa nhiệm vụ này?"))return;await import("https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js").then(async({deleteDoc})=>deleteDoc(doc(db,"tasks",id)));await loadTasks();toast("Đã xóa nhiệm vụ")}
+async function deleteTask(id){if(!confirm("Xóa nhiệm vụ này?"))return;await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js").then(async({deleteDoc})=>deleteDoc(doc(db,"tasks",id)));await loadTasks();toast("Đã xóa nhiệm vụ")}
 
 async function loadProfile(){
  const s=await getDoc(doc(db,"users",user.uid));profile=s.data()||{displayName:user.email?.split("@")[0]||"Học sinh",className:"",points:0,weeklyPoints:0,tasksCompleted:0};
@@ -110,8 +120,35 @@ function setTaskDefaults(){
 function switchTab(name){$$(".nav").forEach(b=>b.classList.toggle("active",b.dataset.tab===name));$$(".tab").forEach(s=>s.classList.toggle("active",s.id===name+"Tab"));if(name==="leaderboard")leaderboard().catch(e=>toast(errorMessage(e)))}
 
 $$(".auth-switch button").forEach(b=>b.onclick=()=>{$$(".auth-switch button").forEach(x=>x.classList.toggle("active",x===b));$("#loginForm").classList.toggle("hidden",b.dataset.auth!=="login");$("#registerForm").classList.toggle("hidden",b.dataset.auth!=="register")});
-$("#loginForm").onsubmit=async e=>{e.preventDefault();try{await signInWithEmailAndPassword(auth,$("#loginEmail").value.trim(),$("#loginPassword").value)}catch(x){toast(errorMessage(x))}};
-$("#registerForm").onsubmit=async e=>{e.preventDefault();try{const cred=await createUserWithEmailAndPassword(auth,$("#regEmail").value.trim(),$("#regPassword").value);await setDoc(doc(db,"users",cred.user.uid),{uid:cred.user.uid,email:cred.user.email,displayName:$("#regName").value.trim(),className:$("#regClass").value.trim(),points:0,weeklyPoints:0,tasksCompleted:0,createdAt:serverTimestamp()});toast("Tạo tài khoản thành công")}catch(x){toast(errorMessage(x))}};
+$("#loginForm").onsubmit=async e=>{
+ e.preventDefault(); clearAuthError();
+ const email=$("#loginEmail").value.trim(), password=$("#loginPassword").value;
+ if(!email||!password){showAuthError("Vui lòng nhập đầy đủ email và mật khẩu.");return}
+ const btn=$("#loginForm button[type=submit]");btn.disabled=true;btn.textContent="Đang đăng nhập...";
+ try{
+   await signInWithEmailAndPassword(auth,email,password);
+ }catch(x){
+   console.error("Firebase login error:",x);
+   showAuthError(errorMessage(x));
+ }finally{
+   btn.disabled=false;btn.textContent="Đăng nhập";
+ }
+};
+$("#registerForm").onsubmit=async e=>{
+ e.preventDefault(); clearAuthError();
+ const name=$("#regName").value.trim(), cls=$("#regClass").value.trim(), email=$("#regEmail").value.trim(), password=$("#regPassword").value;
+ if(!name||!cls||!email||!password){showAuthError("Vui lòng nhập đầy đủ thông tin.");return}
+ const btn=$("#registerForm button[type=submit]");btn.disabled=true;btn.textContent="Đang tạo tài khoản...";
+ try{
+   const cred=await createUserWithEmailAndPassword(auth,email,password);
+   await setDoc(doc(db,"users",cred.user.uid),{uid:cred.user.uid,email:cred.user.email,displayName:name,className:cls,points:0,weeklyPoints:0,tasksCompleted:0,createdAt:serverTimestamp()});
+ }catch(x){
+   console.error("Firebase register error:",x);
+   showAuthError(errorMessage(x));
+ }finally{
+   btn.disabled=false;btn.textContent="Tạo tài khoản";
+ }
+};
 $("#logout").onclick=()=>signOut(auth);
 $$(".nav").forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
 $("#prevWeek").onclick=()=>{weekStart.setDate(weekStart.getDate()-7);renderSchedule()};$("#nextWeek").onclick=()=>{weekStart.setDate(weekStart.getDate()+7);renderSchedule()};$("#thisWeek").onclick=()=>{weekStart=monday(new Date());renderSchedule()};$("#saveSchedule").onclick=()=>saveSchedule().catch(e=>toast(errorMessage(e)));
@@ -123,6 +160,25 @@ $("#taskArea").onclick=e=>{const c=e.target.closest("[data-complete]"),d=e.targe
 $("#profileForm").onsubmit=e=>{e.preventDefault();saveProfile().catch(x=>toast(errorMessage(x)))};
 
 onAuthStateChanged(auth,async u=>{
- user=u;$("#auth").classList.toggle("hidden",!!u);$("#app").classList.toggle("hidden",!u);if(!u)return;
- try{await loadProfile();fillSubjects();renderSchedule();await loadUsers();await loadTasks();}catch(e){toast(errorMessage(e))}
+ user=u;
+ if(u){
+   clearAuthError();
+   $("#auth").classList.add("hidden");
+   $("#app").classList.remove("hidden");
+   $("#headerName").textContent=u.displayName||u.email||"";
+   try{
+     await loadProfile();
+     fillSubjects();
+     renderSchedule();
+     await loadUsers();
+     await loadTasks();
+   }catch(e){
+     console.error("Firebase init error:",e);
+     toast(errorMessage(e));
+   }
+ }else{
+   $("#auth").classList.remove("hidden");
+   $("#app").classList.add("hidden");
+   clearAuthError();
+ }
 });

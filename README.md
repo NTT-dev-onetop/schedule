@@ -17,3 +17,6 @@ Web App HTML/CSS/Vanilla JS + Firebase Authentication + Firestore.
 - Firebase Web API key không phải secret; quyền truy cập dữ liệu được kiểm soát bằng Authentication + Firestore Rules.
 - App dùng giờ địa phương của trình duyệt cho ngày/giờ nhiệm vụ.
 - Firestore queries cho tasks/leaderboard có thể yêu cầu composite index tùy cấu hình Firebase; nếu Console báo thiếu index, tạo index theo link Firebase cung cấp.
+
+## Đăng nhập
+Luồng xác thực dùng `signInWithEmailAndPassword` + `onAuthStateChanged`, hiển thị trực tiếp mã lỗi Firebase thân thiện trên form và ghi lỗi kỹ thuật ra Console để debug.
