@@ -1,7 +1,7 @@
 import {
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   updateProfile, updatePassword, reauthenticateWithCredential, EmailAuthProvider,
-  signOut, signInWithPopup
+  signOut, signInWithPopup, setPersistence, browserLocalPersistence
 } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
 
 import {
@@ -12,9 +12,9 @@ import {
 import { auth, db, googleProvider } from "./firebase-config.js";
 
 const $ = (id) => document.getElementById(id);
-const path = location.pathname.split("/").pop() || "index.html";
-const isAuthPage = false;
-const page = path.replace(".html", "") || "index";
+let page = new URLSearchParams(location.search).get("page") || "index";
+const allowedPages = new Set(["index", "community", "leaderboard", "profile", "admin"]);
+if (!allowedPages.has(page)) page = "index";
 
 let currentUser = null;
 let profile = null;
@@ -23,6 +23,7 @@ let tasks = [];
 let completions = new Set();
 let unsubTasks = [];
 let unsubCompletions = null;
+let listenersStarted = false;
 
 const roleNames = {
   user: "Học sinh",
@@ -81,16 +82,41 @@ function isAdmin() {
   return role === "admin";
 }
 
+function navigate(nextPage) {
+  if (!allowedPages.has(nextPage)) nextPage = "index";
+  page = nextPage;
+  history.pushState({page}, "", nextPage === "index" ? "/" : `/?page=${encodeURIComponent(nextPage)}`);
+  if (currentUser) renderCurrentPage();
+}
+
+function bindNavigation() {
+  document.querySelectorAll(".nav-link, .brand").forEach(a => {
+    a.addEventListener("click", e => {
+      const href = a.getAttribute("href") || "";
+      const m = href.match(/page=([^&]+)/);
+      if (!m) return;
+      e.preventDefault();
+      navigate(decodeURIComponent(m[1]));
+    });
+  });
+}
+
+window.addEventListener("popstate", () => {
+  const next = new URLSearchParams(location.search).get("page") || "index";
+  page = allowedPages.has(next) ? next : "index";
+  if (currentUser) renderCurrentPage();
+});
+
 function navMarkup() {
   return `
     <aside class="sidebar">
-      <a class="brand" href="index.html"><span>📚</span> Học Tập Cộng Đồng</a>
+      <a class="brand" href="/?page=index"><span>📚</span> Học Tập Cộng Đồng</a>
       <nav class="side-nav">
-        <a class="nav-link ${page==="index"?"active":""}" href="index.html">⌂ <span>Trang chủ</span></a>
-        <a class="nav-link ${page==="community"?"active":""}" href="community.html">◉ <span>Cộng đồng</span></a>
-        <a class="nav-link ${page==="leaderboard"?"active":""}" href="leaderboard.html">🏆 <span>Bảng vàng</span></a>
-        <a class="nav-link ${page==="profile"?"active":""}" href="profile.html">● <span>Hồ sơ</span></a>
-        ${isManager() ? `<a class="nav-link ${page==="admin"?"active":""}" href="admin.html">⚙ <span>Quản trị</span></a>` : ""}
+        <a class="nav-link ${page==="index"?"active":""}" href="/?page=index">⌂ <span>Trang chủ</span></a>
+        <a class="nav-link ${page==="community"?"active":""}" href="/?page=community">◉ <span>Cộng đồng</span></a>
+        <a class="nav-link ${page==="leaderboard"?"active":""}" href="/?page=leaderboard">🏆 <span>Bảng vàng</span></a>
+        <a class="nav-link ${page==="profile"?"active":""}" href="/?page=profile">● <span>Hồ sơ</span></a>
+        ${isManager() ? `<a class="nav-link ${page==="admin"?"active":""}" href="/?page=admin">⚙ <span>Quản trị</span></a>` : ""}
       </nav>
       <div class="side-user">
         <div class="avatar">${esc(initials(profile?.displayName || currentUser?.displayName))}</div>
@@ -117,6 +143,7 @@ function shell(title, subtitle, content, actions="") {
     </div>
     <div id="modalRoot"></div>`;
   $("logoutBtn").onclick = () => signOut(auth);
+  bindNavigation();
 }
 
 function renderAuth(mode = "login") {
@@ -222,7 +249,7 @@ async function loadProfile() {
     await setDoc(doc(db,"users",currentUser.uid), profile, {merge:true});
   } else profile = snap.data();
 
-  const token = await currentUser.getIdTokenResult(true);
+  const token = await currentUser.getIdTokenResult(false);
   role = token.claims.role || profile.role || "user";
 }
 
@@ -230,6 +257,8 @@ function taskVisibilityQuery() {
   return query(collection(db,"tasks"), where("visibility","in",["public","shared"]), orderBy("createdAt","desc"));
 }
 function startTaskListeners() {
+  if (listenersStarted) return;
+  listenersStarted = true;
   unsubTasks.forEach(fn => fn && fn());
   unsubTasks = [];
   const publicUnsub = onSnapshot(taskVisibilityQuery(), snap => {
@@ -321,7 +350,7 @@ function renderHome() {
       <div class="progress"><div style="width:${percent}%"></div></div>
       ${todayTasks.length ? `<div class="task-list">${todayTasks.map(t=>taskRow(t)).join("")}</div>` : `<div class="empty">Hôm nay chưa có nhiệm vụ có hạn. Tạo một nhiệm vụ để bắt đầu.</div>`}
     </section>
-    <section><div class="section-head"><div><h2>Nhiệm vụ mới</h2><p>Các nhiệm vụ gần đây</p></div><a class="link-btn" href="community.html">Xem cộng đồng →</a></div>
+    <section><div class="section-head"><div><h2>Nhiệm vụ mới</h2><p>Các nhiệm vụ gần đây</p></div><a class="link-btn" href="/?page=community">Xem cộng đồng →</a></div>
       <div class="task-grid">${tasks.slice(0,6).map(t=>taskCard(t)).join("") || `<div class="empty">Chưa có nhiệm vụ.</div>`}</div>
     </section>
     <footer>© ${new Date().getFullYear()} Nguyễn Trung Trực - Học Tập Cộng Đồng</footer>`;
@@ -446,7 +475,7 @@ function renderHistory(h) {
 }
 
 async function renderAdmin() {
-  if(!isManager()){ location.replace("index.html"); return; }
+  if(!isManager()){ navigate("index"); return; }
   const content=`
     <section class="admin-grid">
       <div class="card"><h2>👥 Quản lý người dùng</h2><div id="userTable"><div class="empty">Đang tải...</div></div></div>
@@ -542,6 +571,8 @@ function renderCurrentPage(){
   else if(page==="admin") renderAdmin();
 }
 
+setPersistence(auth, browserLocalPersistence).catch(err => console.error("Auth persistence:", err));
+
 onAuthStateChanged(auth, async user => {
   currentUser=user;
   if(!user){
@@ -551,7 +582,7 @@ onAuthStateChanged(auth, async user => {
   }
   try {
     await loadProfile();
-    if(page==="admin" && !isManager()){location.replace("index.html");return;}
+    if(page==="admin" && !isManager()){navigate("index");return;}
     startTaskListeners();
     renderCurrentPage();
   } catch(err) {

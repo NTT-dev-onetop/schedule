@@ -55,3 +55,12 @@ Frontend chỉ tạo `task_completions/{taskId}_{uid}`. Frontend **không tự c
 Nếu muốn cấp Admin thật, hãy cấp Custom Claim `role: "admin"` bằng Admin SDK/Cloud Functions hoặc môi trường quản trị an toàn. Không đặt service-account private key vào frontend.
 
 Build/thiết kế: **Nguyễn Trung Trực**
+
+
+## V3 performance
+- Single entry URL `/`; tabs use History API and do not reload the page.
+- Firebase Auth uses `browserLocalPersistence`.
+- ID token is not force-refreshed on every tab navigation.
+- Firestore listeners are initialized once and reused.
+- Vercel rewrite routes clean app URLs back to `index.html`.
+- Class selector is limited to `11T1`.
