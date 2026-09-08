@@ -6,8 +6,8 @@ import { firebaseConfig } from "./firebase-config.js";
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app),provider=new GoogleAuthProvider();
 const DAYS=["Thứ 2","Thứ 3","Thứ 4","Thứ 5","Thứ 6","Thứ 7"];
 const PERIODS=[
- ["Sáng - Tiết 1","Sáng","1"],["Sáng - Tiết 2","Sáng","2"],["Sáng - Tiết 3","Sáng","3"],["Sáng - Tiết 4","Sáng","4"],["Sáng - Tiết 5","Sáng","5"],
- ["Chiều - Tiết 1","Chiều","1"],["Chiều - Tiết 2","Chiều","2"],["Chiều - Tiết 3","Chiều","3"],["Chiều - Tiết 4","Chiều","4"]
+ ["Sáng - Tiết 1","06:55","07:40","Sáng","1"],["Sáng - Tiết 2","07:45","08:30","Sáng","2"],["Sáng - Tiết 3","08:55","09:40","Sáng","3"],["Sáng - Tiết 4","09:45","10:30","Sáng","4"],["Sáng - Tiết 5","10:35","11:20","Sáng","5"],
+ ["Chiều - Tiết 1","13:40","14:25","Chiều","1"],["Chiều - Tiết 2","14:25","15:10","Chiều","2"],["Chiều - Tiết 3","15:15","16:00","Chiều","3"],["Chiều - Tiết 4","16:00","16:45","Chiều","4"]
 ];
 const SUBJECTS=["Toán","Ngữ văn","Tiếng Anh","Vật lý","Hóa học","Sinh học","Lịch sử","Thể dục","GDQP","HDTN","KTPL"];
 let user=null,profile=null,weekStart=monday(new Date()),tasks=[],users=[],view="board",period="current",searchTimer=null,currentSchedule={},taskSchedule={};
