@@ -1,9 +1,9 @@
 export const firebaseConfig = {
-  apiKey: "AIzaSyBp4Iht5dmkHNVu9_bg8Q8R1sfeSpH8STq8",
-  authDomain: "t1-myschedule.firebaseapp.com",
-  projectId: "t1-myschedule",
-  storageBucket: "t1-myschedule.firebasestorage.app",
-  messagingSenderId: "426393869723",
-  appId: "1:426393869723:web:db2dc3ce7b02cb3e24953e",
-  measurementId: "G-M09P6LRX1M"
+  apiKey: "AIzaSyCR2lbKd2TEPl-01VObuV7eWfcSkpacfZA",
+  authDomain: "englishproject-c0131.firebaseapp.com",
+  projectId: "englishproject-c0131",
+  storageBucket: "englishproject-c0131.firebasestorage.app",
+  messagingSenderId: "270223735960",
+  appId: "1:270223735960:web:6d4aa35c04993b0f7724ed",
+  measurementId: "G-GD5P6V42DW"
 };

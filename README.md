@@ -1,9 +1,9 @@
-# SchoolTask — t1-myschedule
+# SchoolTask — englishproject-c0131
 
 Web App HTML/CSS/Vanilla JS + Firebase Authentication + Firestore.
 
 ## Cài đặt
-1. Tạo Firebase Web App trong project `t1-myschedule`.
+1. Tạo Firebase Web App trong project `englishproject-c0131`.
 2. Cấu hình đã được đặt trong `firebase-config.js`.
 3. Firebase Console → Authentication → Sign-in method → bật Email/Password.
 4. Firebase Console → Firestore Database → tạo database.
@@ -20,3 +20,7 @@ Web App HTML/CSS/Vanilla JS + Firebase Authentication + Firestore.
 
 ## Đăng nhập
 Luồng xác thực dùng `signInWithEmailAndPassword` + `onAuthStateChanged`, hiển thị trực tiếp mã lỗi Firebase thân thiện trên form và ghi lỗi kỹ thuật ra Console để debug.
+
+
+## Firebase source
+This build uses the Firebase configuration from `english.zip` (`englishproject-c0131`).
