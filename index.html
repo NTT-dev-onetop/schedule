@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StudyTask</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="authView" class="auth-shell">
+    <div class="auth-card">
+      <div class="logo-mark">✓</div>
+      <h1>StudyTask</h1>
+      <p>Quản lý nhiệm vụ học tập & cộng đồng</p>
+
+      <form id="authForm">
+        <input id="nameInput" class="register-only" type="text" placeholder="Tên hiển thị">
+        <input id="emailInput" type="email" placeholder="Email" required>
+        <input id="passwordInput" type="password" placeholder="Mật khẩu" minlength="6" required>
+        <button class="primary" type="submit" id="authSubmit">Đăng nhập</button>
+      </form>
+
+      <button id="googleBtn" class="secondary">Đăng nhập bằng Google</button>
+      <button id="modeBtn" class="text-button">Chưa có tài khoản? Đăng ký</button>
+      <div id="authError" class="error"></div>
+    </div>
+  </div>
+
+  <div id="appView" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand"><span>✓</span> StudyTask</div>
+      <nav>
+        <button data-page="home" class="nav-btn active">⌂ <span>Tổng quan</span></button>
+        <button data-page="community" class="nav-btn">◉ <span>Cộng đồng</span></button>
+        <button data-page="ranking" class="nav-btn">★ <span>Xếp hạng</span></button>
+        <button data-page="profile" class="nav-btn">● <span>Hồ sơ</span></button>
+        <button data-page="admin" id="adminNav" class="nav-btn hidden">⚙ <span>Quản trị</span></button>
+      </nav>
+
+      <div class="side-user">
+        <div id="avatar" class="avatar">H</div>
+        <div>
+          <strong id="sideName">Học sinh</strong>
+          <small id="sideRole">Học sinh</small>
+        </div>
+      </div>
+      <button id="logoutBtn" class="logout">↪ Đăng xuất</button>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h1 id="pageTitle">Tổng quan</h1>
+          <p>Tuần này · nhiệm vụ học tập</p>
+        </div>
+        <button id="addTaskBtn" class="primary">＋ Tạo nhiệm vụ</button>
+      </header>
+
+      <section id="page-home" class="page">
+        <div class="hero">
+          <div>
+            <span class="eyebrow">STUDYTASK</span>
+            <h2>Học tập có tổ chức,<br>cùng nhau tiến bộ.</h2>
+            <p>Chia sẻ nhiệm vụ, hoàn thành bài tập và tích điểm mỗi tuần.</p>
+          </div>
+          <div class="hero-icon">★</div>
+        </div>
+
+        <div class="stats">
+          <div><strong id="myTaskCount">0</strong><span>Nhiệm vụ của tôi</span></div>
+          <div><strong id="communityCount">0</strong><span>Trong cộng đồng</span></div>
+          <div><strong id="myPoints">0</strong><span>Điểm</span></div>
+        </div>
+
+        <div class="section-head"><h2>Nhiệm vụ mới</h2></div>
+        <div id="homeTasks" class="task-grid"></div>
+      </section>
+
+      <section id="page-community" class="page hidden">
+        <div class="section-head">
+          <div><h2>Nhiệm vụ cộng đồng</h2><p>Công khai và chia sẻ</p></div>
+        </div>
+        <div id="communityTasks" class="task-grid"></div>
+      </section>
+
+      <section id="page-ranking" class="page hidden">
+        <div class="card">
+          <h2>★ Bảng xếp hạng tuần</h2>
+          <p class="muted">Ranking sẽ được Cloud Functions cập nhật tự động.</p>
+          <div id="rankingList"></div>
+        </div>
+      </section>
+
+      <section id="page-profile" class="page hidden">
+        <div class="profile-card card">
+          <div id="profileAvatar" class="big-avatar">H</div>
+          <h2 id="profileName">Học sinh</h2>
+          <p id="profileEmail" class="muted"></p>
+          <span id="profileRole" class="role-badge">Học sinh</span>
+          <div class="stats">
+            <div><strong id="profilePoints">0</strong><span>Điểm</span></div>
+            <div><strong id="profileCompleted">0</strong><span>Đã hoàn thành</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="page-admin" class="page hidden">
+        <div class="card">
+          <h2>⚙ Quản trị</h2>
+          <p class="muted">Khu vực này chỉ hiện với Moderator / Assistant / Admin.</p>
+          <div class="role-info">
+            <div><b>Moderator</b><span>Quản lý task vi phạm</span></div>
+            <div><b>Assistant</b><span>Quản lý người dùng & thông báo</span></div>
+            <div><b>Admin</b><span>Toàn quyền hệ thống</span></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="taskModal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-head"><h2>Tạo nhiệm vụ</h2><button id="closeModal">×</button></div>
+      <form id="taskForm">
+        <input id="taskTitle" placeholder="Tên nhiệm vụ *" required>
+        <textarea id="taskDescription" placeholder="Mô tả"></textarea>
+        <div class="two">
+          <input id="taskSubject" placeholder="Môn học">
+          <input id="taskDeadline" type="date">
+        </div>
+        <div class="two">
+          <select id="taskPriority">
+            <option value="low">Ưu tiên thấp</option>
+            <option value="medium" selected>Ưu tiên vừa</option>
+            <option value="high">Ưu tiên cao</option>
+          </select>
+          <select id="taskVisibility">
+            <option value="shared" selected>Chia sẻ — mọi người hoàn thành</option>
+            <option value="public">Công khai — chỉ tôi hoàn thành</option>
+            <option value="private">Riêng tư</option>
+          </select>
+        </div>
+        <div id="taskError" class="error"></div>
+        <button class="primary" type="submit">Tạo nhiệm vụ</button>
+      </form>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
