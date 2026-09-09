@@ -65,30 +65,23 @@ function scheduleSelect(date,day,p,extra=""){
  const value=currentSchedule[day]?.[p[0]]||"";
  return `<select class="schedule-input" data-day="${escape(day)}" data-period="${escape(p[0])}" aria-label="${escape(day)} ${escape(p[0])}"><option value="">— Chọn môn —</option>${subjectOptions(value)}</select>`;
 }
-function schedulePeriods(){ return PERIODS.filter(p=>p[3]===(scheduleSession==="morning"?"Sáng":"Chiều")); }
 function renderMobileSchedule(){
  const day=DAYS[mobileDayIndex]||DAYS[0],date=iso(new Date(weekStart.getTime()+mobileDayIndex*86400000));
  const row=currentSchedule[day]||{};
  const selector=$("#mobileDaySelector");
  if(selector)selector.innerHTML=DAYS.map((d,i)=>`<button class="day-chip ${i===mobileDayIndex?"active":""}" data-mobile-day="${i}"><b>${d.replace("Thứ ","T")}</b><small>${new Date(weekStart.getTime()+i*86400000).toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit"})}</small></button>`).join("");
- const tabs=$("#scheduleSessionTabs");
- if(tabs)tabs.querySelectorAll(".session-tab").forEach(b=>{const active=b.dataset.session===scheduleSession;b.classList.toggle("active",active);b.setAttribute("aria-selected",active?"true":"false")});
  const area=$("#mobileSchedule");
  if(!area)return;
- const periods=schedulePeriods();
- area.innerHTML=`<div class="mobile-day-title"><div><span>${day}</span><strong>${localDate(date).toLocaleDateString("vi-VN",{weekday:"long",day:"2-digit",month:"2-digit"})}</strong></div><span>${periods.filter(p=>row[p[0]]).length}/${periods.length} tiết có môn</span></div>`+
- periods.map(p=>{const subject=row[p[0]]||"";return `<article class="period-card ${p[3]==="Sáng"?"morning":"afternoon"}" style="--subject-color:${subjectColor(subject)}"><div class="period-number"><span>${p[3]==="Sáng"?"☀️":"🌙"}</span><b>Tiết ${p[4]}</b><small>${p[1]}–${p[2]}</small></div><div class="period-subject">${scheduleSelect(date,day,p)}</div><div class="period-task"><select class="schedule-task-select" data-task-date="${date}" data-task-period="${escape(p[0])}" aria-label="Nhiệm vụ ${escape(day)} ${escape(p[0])}"><option value="">📋 Nhiệm vụ</option></select></div></article>`}).join("");
+ area.innerHTML=`<div class="mobile-day-title"><div><span>${day}</span><strong>${localDate(date).toLocaleDateString("vi-VN",{weekday:"long",day:"2-digit",month:"2-digit"})}</strong></div><span>${Object.values(row).filter(Boolean).length}/9 tiết có môn</span></div>`+
+ PERIODS.map(p=>{const subject=row[p[0]]||"";return `<article class="period-card ${p[3]==="Sáng"?"morning":"afternoon"}" style="--subject-color:${subjectColor(subject)}"><div class="period-number"><span>${p[3]==="Sáng"?"☀️":"🌙"}</span><b>Tiết ${p[4]}</b><small>${p[1]}–${p[2]}</small></div><div class="period-subject">${scheduleSelect(date,day,p)}</div><div class="period-task"><select class="schedule-task-select" data-task-date="${date}" data-task-period="${escape(p[0])}" aria-label="Nhiệm vụ ${escape(day)} ${escape(p[0])}"><option value="">📋 Nhiệm vụ</option></select></div></article>`}).join("");
 }
-
 function renderSchedule(){
  const weekKey=iso(weekStart),renderToken=++scheduleRenderToken;
  unsubscribeScheduleRealtime(); currentSchedule={};
  const end=new Date(weekStart.getTime()+6*86400000);
  $("#weekText").textContent=`${weekStart.toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit"})} – ${end.toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit",year:"numeric"})}`;
- const periods=schedulePeriods();
- const sessionLabel=scheduleSession==="morning"?"Sáng":"Chiều";
- const head=`<thead><tr><th rowspan="2" class="day-col">Thứ</th><th colspan="${periods.length}" class="session ${scheduleSession}">${scheduleSession==="morning"?"☀️":"🌙"} ${sessionLabel}</th></tr><tr>${periods.map(p=>`<th class="period-head ${scheduleSession}">Tiết ${p[4]}<small>${p[1]}–${p[2]}</small></th>`).join("")}</tr></thead>`;
- const body=`<tbody>${DAYS.map((d,di)=>`<tr><th class="day-name">${d}<small>${new Date(weekStart.getTime()+di*86400000).toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit"})}</small></th>${periods.map(p=>{const date=iso(new Date(weekStart.getTime()+di*86400000));return `<td class="schedule-cell" data-date="${date}" data-day="${d}" data-period="${p[0]}">${scheduleSelect(date,d,p)}<select class="schedule-task-select" data-task-date="${date}" data-task-period="${p[0]}" aria-label="Nhiệm vụ ${d} ${p[0]}"><option value="">📋 Nhiệm vụ</option></select></td>`}).join("")}</tr>`).join("")}</tbody>`;
+ const head=`<thead><tr><th rowspan="2" class="day-col">Thứ</th><th colspan="5" class="session morning">☀️ Sáng</th><th colspan="4" class="session afternoon">🌙 Chiều</th></tr><tr>${PERIODS.map(p=>`<th class="period-head ${p[3]==="Sáng"?"morning":"afternoon"}">Tiết ${p[4]}<small>${p[1]}–${p[2]}</small></th>`).join("")}</tr></thead>`;
+ const body=`<tbody>${DAYS.map((d,di)=>`<tr><th class="day-name">${d}<small>${new Date(weekStart.getTime()+di*86400000).toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit"})}</small></th>${PERIODS.map(p=>{const date=iso(new Date(weekStart.getTime()+di*86400000));return `<td class="schedule-cell" data-date="${date}" data-day="${d}" data-period="${p[0]}">${scheduleSelect(date,d,p)}<select class="schedule-task-select" data-task-date="${date}" data-task-period="${p[0]}" aria-label="Nhiệm vụ ${d} ${p[0]}"><option value="">📋 Nhiệm vụ</option></select></td>`}).join("")}</tr>`).join("")}</tbody>`;
  $("#scheduleTable").innerHTML=head+body; renderMobileSchedule(); applyScheduleToUI();
  if(user)subscribeScheduleRealtime(weekKey,renderToken);
 }
@@ -140,13 +133,14 @@ function syncScheduleInputGroup(source){
 }
 
 function collectScheduleFromUI(){
- const schedule=JSON.parse(JSON.stringify(currentSchedule||{}));
+ const schedule={};
  DAYS.forEach(d=>{
-   schedule[d]??={};
+   schedule[d]={};
    PERIODS.forEach(p=>{
-     const nodes=$$(`.schedule-input[data-day="${CSS.escape(d)}"][data-period="${CSS.escape(p[0])}"]`);
-     if(nodes.length) schedule[d][p[0]]=nodes.find(x=>x.value)?.value||"";
-     else if(schedule[d][p[0]]===undefined) schedule[d][p[0]]="";
+     const inputs=$$(`.schedule-input[data-day="${CSS.escape(d)}"][data-period="${CSS.escape(p[0])}"]`);
+     // Desktop and mobile render the same cell. The change handler keeps them
+     // mirrored, so the first value is enough; fall back to any non-empty value.
+     schedule[d][p[0]]=inputs.find(x=>x.value)?.value||inputs[0]?.value||"";
    });
  });
  return schedule;
@@ -354,7 +348,6 @@ $$('.subtabs button').forEach(b=>b.onclick=()=>{$$('.subtabs button').forEach(x=
 $("#taskArea").onclick=e=>{const c=e.target.closest('[data-complete]'),d=e.target.closest('[data-delete]');if(c&&!c.disabled)completeTask(c.dataset.complete).catch(x=>toast(errorMessage(x)));if(d)deleteTask(d.dataset.delete).catch(x=>toast(errorMessage(x)))};
 $("#profileForm").onsubmit=e=>{e.preventDefault();saveProfile().catch(x=>toast(errorMessage(x)))};
 
-$("#scheduleSessionTabs")?.addEventListener("click",e=>{const b=e.target.closest("[data-session]");if(!b)return;scheduleSession=b.dataset.session==="afternoon"?"afternoon":"morning";renderSchedule();});
 $("#mobileDaySelector")?.addEventListener("click",e=>{const b=e.target.closest("[data-mobile-day]");if(!b)return;mobileDayIndex=Number(b.dataset.mobileDay);renderMobileSchedule();renderScheduleTaskDropdowns();});
 window.addEventListener("online",updateOnlineStatus);
 window.addEventListener("offline",updateOnlineStatus);
