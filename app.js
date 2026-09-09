@@ -10,7 +10,7 @@ const PERIODS=[
  ["Chiều - Tiết 1","13:40","14:25","Chiều","1"],["Chiều - Tiết 2","14:25","15:10","Chiều","2"],["Chiều - Tiết 3","15:15","16:00","Chiều","3"],["Chiều - Tiết 4","16:00","16:45","Chiều","4"]
 ];
 const SUBJECTS=["Toán","Ngữ văn","Tiếng Anh","Vật lý","Hóa học","Sinh học","Lịch sử","Thể dục","GDQP","HDTN","KTPL"];
-let user=null,profile=null,weekStart=monday(new Date()),tasks=[],users=[],view="board",period="current",searchTimer=null,currentSchedule={},taskSchedule={},unsubs=[],scheduleUnsub=null,scheduleListenerKey=null,scheduleRenderToken=0;
+let user=null,profile=null,weekStart=monday(new Date()),tasks=[],users=[],view="board",period="current",searchTimer=null,currentSchedule={},taskSchedule={},unsubs=[],scheduleUnsub=null,scheduleListenerKey=null,scheduleRenderToken=0,mobileDayIndex=Math.max(0,Math.min(5,new Date().getDay()-1));
 
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const iso=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");return `${y}-${m}-${day}`};
@@ -20,6 +20,14 @@ function escape(v=""){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"
 function showAuthError(msg){const e=$("#authErr");if(e){e.textContent=msg;e.classList.remove("hidden")}}
 function clearAuthError(){const e=$("#authErr");if(e){e.textContent="";e.classList.add("hidden")}}
 function toast(msg){const e=$("#toast");e.textContent=msg;e.classList.add("show");clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove("show"),2600)}
+function setSyncStatus(kind="online",text="Đang đồng bộ"){
+ const el=$("#syncStatus"); if(!el)return;
+ el.className=`sync-status ${kind}`;
+ const icons={online:"fa-wifi",saving:"fa-rotate fa-spin",error:"fa-triangle-exclamation",offline:"fa-cloud"};
+ el.innerHTML=`<i class="fa-solid ${icons[kind]||icons.online}"></i> ${escape(text)}`;
+}
+function updateOnlineStatus(){setSyncStatus(navigator.onLine?"online":"offline",navigator.onLine?"Đang đồng bộ":"Ngoại tuyến");}
+
 function errorMessage(e){const c=e?.code||"";const map={"auth/popup-closed-by-user":"Bạn đã đóng cửa sổ đăng nhập.","auth/popup-blocked":"Trình duyệt đã chặn cửa sổ đăng nhập. Hãy cho phép popup rồi thử lại.","auth/cancelled-popup-request":"Yêu cầu đăng nhập đã bị hủy.","auth/unauthorized-domain":"Tên miền hiện tại chưa được thêm vào Authorized domains của Firebase.","auth/operation-not-allowed":"Đăng nhập Google chưa được bật trong Firebase Authentication.","auth/network-request-failed":"Không thể kết nối Firebase. Kiểm tra mạng rồi thử lại.","permission-denied":"Bạn không có quyền thực hiện thao tác này."};return map[c]||e?.message||"Có lỗi xảy ra. Vui lòng thử lại."}
 function initials(n="HS"){return n.trim().split(/\s+/).slice(-2).map(x=>x[0]).join("").toUpperCase()||"HS"}
 function periodByKey(key){return PERIODS.find(p=>p[0]===key)}
@@ -36,25 +44,38 @@ function sharedScheduleRef(){ return doc(db,"schedules",iso(weekStart)); }
 function sharedScheduleRefFor(date){ return doc(db,"schedules",weekKeyForDate(date)); }
 function scheduleForCurrentWeek(){ return currentSchedule||{}; }
 
+function subjectColor(subject=""){
+ let h=0; for(const c of subject)h=(h*31+c.charCodeAt(0))%360;
+ return `hsl(${h} 72% 42%)`;
+}
+function scheduleSelect(date,day,p,extra=""){
+ const value=currentSchedule[day]?.[p[0]]||"";
+ return `<select class="schedule-input" data-day="${escape(day)}" data-period="${escape(p[0])}" aria-label="${escape(day)} ${escape(p[0])}"><option value="">— Chọn môn —</option>${subjectOptions(value)}</select>`;
+}
+function renderMobileSchedule(){
+ const day=DAYS[mobileDayIndex]||DAYS[0],date=iso(new Date(weekStart.getTime()+mobileDayIndex*86400000));
+ const row=currentSchedule[day]||{};
+ const selector=$("#mobileDaySelector");
+ if(selector)selector.innerHTML=DAYS.map((d,i)=>`<button class="day-chip ${i===mobileDayIndex?"active":""}" data-mobile-day="${i}"><b>${d.replace("Thứ ","T")}</b><small>${new Date(weekStart.getTime()+i*86400000).toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit"})}</small></button>`).join("");
+ const area=$("#mobileSchedule");
+ if(!area)return;
+ area.innerHTML=`<div class="mobile-day-title"><div><span>${day}</span><strong>${localDate(date).toLocaleDateString("vi-VN",{weekday:"long",day:"2-digit",month:"2-digit"})}</strong></div><span>${Object.values(row).filter(Boolean).length}/9 tiết có môn</span></div>`+
+ PERIODS.map(p=>{const subject=row[p[0]]||"";return `<article class="period-card ${p[3]==="Sáng"?"morning":"afternoon"}" style="--subject-color:${subjectColor(subject)}"><div class="period-number"><span>${p[3]==="Sáng"?"☀️":"🌙"}</span><b>Tiết ${p[4]}</b><small>${p[1]}–${p[2]}</small></div><div class="period-subject">${scheduleSelect(date,day,p)}</div><div class="period-task"><select class="schedule-task-select" data-task-date="${date}" data-task-period="${escape(p[0])}" aria-label="Nhiệm vụ ${escape(day)} ${escape(p[0])}"><option value="">📋 Nhiệm vụ</option></select></div></article>`}).join("");
+}
 function renderSchedule(){
- const weekKey=iso(weekStart);
- const renderToken=++scheduleRenderToken;
- // Always detach the listener for the previous week before attaching the new one.
- unsubscribeScheduleRealtime();
- currentSchedule={};
- $("#weekText").textContent=`${weekStart.toLocaleDateString("vi-VN")} – ${new Date(weekStart.getTime()+6*86400000).toLocaleDateString("vi-VN")}`;
+ const weekKey=iso(weekStart),renderToken=++scheduleRenderToken;
+ unsubscribeScheduleRealtime(); currentSchedule={};
+ const end=new Date(weekStart.getTime()+6*86400000);
+ $("#weekText").textContent=`${weekStart.toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit"})} – ${end.toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit",year:"numeric"})}`;
  const head=`<thead><tr><th rowspan="2" class="day-col">Thứ</th><th colspan="5" class="session morning">☀️ Sáng</th><th colspan="4" class="session afternoon">🌙 Chiều</th></tr><tr>${PERIODS.map(p=>`<th class="period-head ${p[3]==="Sáng"?"morning":"afternoon"}">Tiết ${p[4]}<small>${p[1]}–${p[2]}</small></th>`).join("")}</tr></thead>`;
- const body=`<tbody>${DAYS.map((d,di)=>`<tr><th class="day-name">${d}<small>${new Date(weekStart.getTime()+di*86400000).toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit"})}</small></th>${PERIODS.map(p=>{
-   const date=iso(new Date(weekStart.getTime()+di*86400000));
-   return `<td class="schedule-cell" data-date="${date}" data-day="${d}" data-period="${p[0]}"><select class="schedule-input" data-day="${d}" data-period="${p[0]}" aria-label="${d} ${p[0]}"><option value="">— Chọn môn —</option>${subjectOptions()}</select><select class="schedule-task-select" data-task-date="${date}" data-task-period="${p[0]}" aria-label="Nhiệm vụ ${d} ${p[0]}"><option value="">📋 Nhiệm vụ</option></select></td>`;
- }).join("")}</tr>`).join("")}</tbody>`;
- $("#scheduleTable").innerHTML=head+body;
- applyScheduleToUI();
- if(user) subscribeScheduleRealtime(weekKey,renderToken);
+ const body=`<tbody>${DAYS.map((d,di)=>`<tr><th class="day-name">${d}<small>${new Date(weekStart.getTime()+di*86400000).toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit"})}</small></th>${PERIODS.map(p=>{const date=iso(new Date(weekStart.getTime()+di*86400000));return `<td class="schedule-cell" data-date="${date}" data-day="${d}" data-period="${p[0]}">${scheduleSelect(date,d,p)}<select class="schedule-task-select" data-task-date="${date}" data-task-period="${p[0]}" aria-label="Nhiệm vụ ${d} ${p[0]}"><option value="">📋 Nhiệm vụ</option></select></td>`}).join("")}</tr>`).join("")}</tbody>`;
+ $("#scheduleTable").innerHTML=head+body; renderMobileSchedule(); applyScheduleToUI();
+ if(user)subscribeScheduleRealtime(weekKey,renderToken);
 }
 
 function applyScheduleToUI(){
  $$(".schedule-input").forEach(e=>e.value=currentSchedule[e.dataset.day]?.[e.dataset.period]||"");
+ renderMobileSchedule();
  renderScheduleTaskDropdowns();
 }
 
@@ -66,12 +87,17 @@ function subscribeScheduleRealtime(expectedWeekKey=iso(weekStart),renderToken=sc
  scheduleUnsub=onSnapshot(ref,snap=>{
    // Ignore a late callback from an old week/user render.
    if(!user || scheduleListenerKey!==expectedWeekKey || renderToken!==scheduleRenderToken) return;
-   currentSchedule=snap.exists()?(snap.data().schedule||{}):{};
+   const incoming=snap.exists()?(snap.data().schedule||{}):{};
+   const changed=JSON.stringify(incoming)!==JSON.stringify(currentSchedule);
+   currentSchedule=incoming;
    applyScheduleToUI();
+   setSyncStatus("online","Đang đồng bộ");
+   if(changed && snap.exists() && snap.metadata?.hasPendingWrites===false) toast("🔄 TKB vừa được cập nhật");
    syncTaskDropdown().catch(e=>console.warn("sync task dropdown after schedule update:",e));
  },e=>{
    if(scheduleListenerKey!==expectedWeekKey || renderToken!==scheduleRenderToken)return;
    console.error("schedule listener",e);
+   setSyncStatus("error","Lỗi đồng bộ");
    toast(`Không thể đồng bộ TKB: ${errorMessage(e)}`);
  });
 }
@@ -92,6 +118,7 @@ async function saveSchedule(){
  const schedule={};
  DAYS.forEach(d=>{schedule[d]={};PERIODS.forEach(p=>{schedule[d][p[0]]=$( `.schedule-input[data-day="${d}"][data-period="${p[0]}"]`)?.value||""})});
  try {
+  setSyncStatus("saving","Đang lưu...");
   await setDoc(ref,{
    weekStart:weekKey,
    schedule,
@@ -104,9 +131,11 @@ async function saveSchedule(){
    currentSchedule=schedule;
    applyScheduleToUI();
   }
-  toast("Đã cập nhật TKB chung cho mọi người");
+  setSyncStatus("online","Đang đồng bộ");
+  toast("✓ Đã cập nhật TKB chung");
  } catch(e) {
   console.error("saveSchedule failed:",e);
+  setSyncStatus("error","Lưu thất bại");
   toast(`Lưu TKB thất bại: ${errorMessage(e)}`);
   throw e;
  }
@@ -269,6 +298,11 @@ $$('.seg button').forEach(b=>b.onclick=()=>{$$('.seg button').forEach(x=>x.class
 $$('.subtabs button').forEach(b=>b.onclick=()=>{$$('.subtabs button').forEach(x=>x.classList.toggle('active',x===b));period=b.dataset.period;renderTasks()});
 $("#taskArea").onclick=e=>{const c=e.target.closest('[data-complete]'),d=e.target.closest('[data-delete]');if(c&&!c.disabled)completeTask(c.dataset.complete).catch(x=>toast(errorMessage(x)));if(d)deleteTask(d.dataset.delete).catch(x=>toast(errorMessage(x)))};
 $("#profileForm").onsubmit=e=>{e.preventDefault();saveProfile().catch(x=>toast(errorMessage(x)))};
+
+$("#mobileDaySelector")?.addEventListener("click",e=>{const b=e.target.closest("[data-mobile-day]");if(!b)return;mobileDayIndex=Number(b.dataset.mobileDay);renderMobileSchedule();renderScheduleTaskDropdowns();});
+window.addEventListener("online",updateOnlineStatus);
+window.addEventListener("offline",updateOnlineStatus);
+updateOnlineStatus();
 
 onAuthStateChanged(auth,async u=>{
  user=u;

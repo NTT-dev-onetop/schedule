@@ -21,8 +21,8 @@
 <div id="app" class="hidden">
 <header class="topbar">
   <div class="brand"><i class="fa-solid fa-graduation-cap"></i><span>SchoolTask</span></div>
-  <div class="topbar-title">Quản lý nhiệm vụ học tập</div>
-  <div class="user"><span id="headerName">Học sinh</span><button id="logout" class="icon" title="Đăng xuất"><i class="fa-solid fa-right-from-bracket"></i></button></div>
+  <div class="topbar-title"><span>Quản lý nhiệm vụ học tập</span><span id="syncStatus" class="sync-status online"><i class="fa-solid fa-wifi"></i> Đang đồng bộ</span></div>
+  <div class="user"><span id="headerName">Học sinh</span><button id="logout" class="icon" title="Đăng xuất" aria-label="Đăng xuất"><i class="fa-solid fa-right-from-bracket"></i></button></div>
 </header>
 <div class="app-layout">
 <aside class="sidebar">
@@ -36,9 +36,10 @@
 </aside>
 <main class="container">
 <section id="scheduleTab" class="tab active">
-  <div class="head schedule-head"><div><span class="eyebrow"><i class="fa-regular fa-calendar"></i> LỊCH HỌC</span><h1>Thời khóa biểu</h1><p id="weekText" class="muted"></p></div><div class="actions"><button id="prevWeek" class="icon-btn" title="Tuần trước">‹</button><button id="thisWeek" class="btn ghost">Tuần này</button><button id="nextWeek" class="icon-btn" title="Tuần sau">›</button><button id="saveSchedule" class="btn primary"><i class="fa-solid fa-floppy-disk"></i> Lưu thời khóa biểu</button></div></div>
-  
-  <div class="card schedule-card"><div class="table-scroll"><table id="scheduleTable"></table></div><div class="schedule-hint"><span><i class="fa-solid fa-circle-check"></i> Chỉ lưu môn học</span><span><i class="fa-solid fa-mobile-screen-button"></i> Kéo ngang trên điện thoại nếu cần</span></div></div>
+  <div class="head schedule-head"><div><span class="eyebrow"><i class="fa-regular fa-calendar"></i> THỜI KHÓA BIỂU CHUNG</span><h1>Thời khóa biểu</h1><p id="weekText" class="muted"></p></div><div class="actions"><button id="prevWeek" class="icon-btn" title="Tuần trước" aria-label="Tuần trước">‹</button><button id="thisWeek" class="btn ghost">Hôm nay</button><button id="nextWeek" class="icon-btn" title="Tuần sau" aria-label="Tuần sau">›</button><button id="saveSchedule" class="btn primary"><i class="fa-solid fa-floppy-disk"></i> Lưu TKB</button></div></div>
+  <div class="schedule-meta"><div><span class="live-dot"></span><strong>TKB dùng chung</strong><span>Thay đổi sẽ cập nhật cho người khác ngay.</span></div><div id="saveHint">Chọn môn trực tiếp trên lịch</div></div>
+  <div id="mobileDaySelector" class="day-selector" aria-label="Chọn ngày"></div>
+  <div class="card schedule-card"><div class="table-scroll desktop-schedule"><table id="scheduleTable"></table></div><div id="mobileSchedule" class="mobile-schedule"></div><div class="schedule-hint"><span><i class="fa-solid fa-circle-check"></i> Mỗi ô là một môn học</span><span><i class="fa-solid fa-bolt"></i> Đồng bộ realtime</span></div></div>
 </section>
 
 <section id="tasksTab" class="tab">
