@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import { getAuth,onAuthStateChanged,GoogleAuthProvider,signInWithPopup,signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-import { getFirestore,doc,getDoc,setDoc,updateDoc,addDoc,collection,query,orderBy,getDocs,runTransaction,serverTimestamp,arrayUnion,deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { getFirestore,doc,getDoc,setDoc,updateDoc,addDoc,collection,query,orderBy,getDocs,runTransaction,serverTimestamp,arrayUnion,deleteDoc,onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app),provider=new GoogleAuthProvider();
@@ -10,7 +10,7 @@ const PERIODS=[
  ["Chiều - Tiết 1","13:40","14:25","Chiều","1"],["Chiều - Tiết 2","14:25","15:10","Chiều","2"],["Chiều - Tiết 3","15:15","16:00","Chiều","3"],["Chiều - Tiết 4","16:00","16:45","Chiều","4"]
 ];
 const SUBJECTS=["Toán","Ngữ văn","Tiếng Anh","Vật lý","Hóa học","Sinh học","Lịch sử","Thể dục","GDQP","HDTN","KTPL"];
-let user=null,profile=null,weekStart=monday(new Date()),tasks=[],users=[],view="board",period="current",searchTimer=null,currentSchedule={},taskSchedule={};
+let user=null,profile=null,weekStart=monday(new Date()),tasks=[],users=[],view="board",period="current",searchTimer=null,currentSchedule={},taskSchedule={},unsubs=[];
 
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const iso=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");return `${y}-${m}-${day}`};
@@ -32,35 +32,56 @@ function subjectOptions(selected="",subjects=SUBJECTS){
  return list.map(s=>`<option value="${escape(s)}" ${s===selected?"selected":""}>${escape(s)}</option>`).join("");
 }
 
+function sharedScheduleRef(){ return doc(db,"schedules",iso(weekStart)); }
+function scheduleForCurrentWeek(){ return currentSchedule||{}; }
 function renderSchedule(){
+ const weekKey=iso(weekStart);
  $("#weekText").textContent=`${weekStart.toLocaleDateString("vi-VN")} – ${new Date(weekStart.getTime()+6*86400000).toLocaleDateString("vi-VN")}`;
  const head=`<thead><tr><th rowspan="2" class="day-col">Thứ</th><th colspan="5" class="session morning">☀️ Sáng</th><th colspan="4" class="session afternoon">🌙 Chiều</th></tr><tr>${PERIODS.map(p=>`<th class="period-head ${p[3]==="Sáng"?"morning":"afternoon"}">Tiết ${p[4]}<small>${p[1]}–${p[2]}</small></th>`).join("")}</tr></thead>`;
- const body=`<tbody>${DAYS.map((d,di)=>`<tr><th class="day-name">${d}<small>${new Date(weekStart.getTime()+di*86400000).toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit"})}</small></th>${PERIODS.map(p=>`<td><select class="schedule-input" data-day="${d}" data-period="${p[0]}" aria-label="${d} ${p[0]}"><option value="">— Chọn môn —</option>${subjectOptions()}</select></td>`).join("")}</tr>`).join("")}</tbody>`;
+ const body=`<tbody>${DAYS.map((d,di)=>`<tr><th class="day-name">${d}<small>${new Date(weekStart.getTime()+di*86400000).toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit"})}</small></th>${PERIODS.map(p=>{
+   const date=iso(new Date(weekStart.getTime()+di*86400000));
+   return `<td class="schedule-cell" data-date="${date}" data-day="${d}" data-period="${p[0]}"><select class="schedule-input" data-day="${d}" data-period="${p[0]}" aria-label="${d} ${p[0]}"><option value="">— Chọn môn —</option>${subjectOptions()}</select><select class="schedule-task-select" data-task-date="${date}" data-task-period="${p[0]}" aria-label="Nhiệm vụ ${d} ${p[0]}"><option value="">📋 Nhiệm vụ</option></select></td>`;
+ }).join("")}</tr>`).join("")}</tbody>`;
  $("#scheduleTable").innerHTML=head+body;
- loadSchedule().catch(e=>toast(errorMessage(e)));
+ applyScheduleToUI();
+ renderScheduleTaskDropdowns();
+ loadScheduleForCurrentWeek().catch(e=>toast(errorMessage(e)));
 }
-async function loadSchedule(){
- const s=await getDoc(doc(db,"schedules",`${user.uid}_${iso(weekStart)}`));currentSchedule=s.exists()?(s.data().schedule||{}):{};
+function applyScheduleToUI(){
  $$(".schedule-input").forEach(e=>e.value=currentSchedule[e.dataset.day]?.[e.dataset.period]||"");
+ renderScheduleTaskDropdowns();
+}
+async function loadScheduleForCurrentWeek(){
+ const s=await getDoc(sharedScheduleRef());
+ currentSchedule=s.exists()?(s.data().schedule||{}):{};
+ applyScheduleToUI();
+ await syncTaskDropdown();
 }
 async function saveSchedule(){
  const schedule={};
  DAYS.forEach(d=>{schedule[d]={};PERIODS.forEach(p=>{schedule[d][p[0]]=$( `.schedule-input[data-day="${d}"][data-period="${p[0]}"]`)?.value||""})});
- await setDoc(doc(db,"schedules",`${user.uid}_${iso(weekStart)}`),{userId:user.uid,weekStart:iso(weekStart),schedule,updatedAt:serverTimestamp()},{merge:true});
+ await setDoc(sharedScheduleRef(),{weekStart:iso(weekStart),schedule,updatedAt:serverTimestamp(),updatedBy:user.uid,updatedByName:profile?.displayName||user.displayName||"Học sinh"},{merge:true});
  currentSchedule=schedule;
  await syncTaskDropdown();
- toast("Đã lưu thời khóa biểu và cập nhật danh sách môn cho Nhiệm vụ");
+ renderScheduleTaskDropdowns();
+ toast("Đã cập nhật TKB chung cho mọi người");
 }
-
+function renderScheduleTaskDropdowns(){
+ $$(".schedule-task-select").forEach(sel=>{
+   const date=sel.dataset.taskDate, p=sel.dataset.taskPeriod;
+   const subject=currentSchedule[dayFromDate(date)]?.[p]||"";
+   const matching=tasks.filter(t=>t.date===date&&t.period===p&&(!subject||t.subject===subject));
+   sel.innerHTML=`<option value="">${matching.length?`📋 ${matching.length} nhiệm vụ`:`📋 Chưa có nhiệm vụ`}</option>`+matching.map(t=>`<option value="${escape(t.id)}">${escape(t.taskContent)} · ${Number(t.points||0)}đ</option>`).join("");
+ });
+}
 function scheduleSubjectsForDate(date){
  const day=dayFromDate(date),row=currentSchedule[day]||{};
- const subjects=PERIODS.map(p=>row[p[0]]).filter(Boolean);
- return [...new Set(subjects)];
+ return [...new Set(PERIODS.map(p=>row[p[0]]).filter(Boolean))];
 }
 async function loadScheduleForDate(date){
  const key=weekKeyForDate(date);
  if(key===iso(weekStart))return currentSchedule;
- const s=await getDoc(doc(db,"schedules",`${user.uid}_${key}`));
+ const s=await getDoc(doc(db,"schedules",key));
  return s.exists()?(s.data().schedule||{}):{};
 }
 async function syncTaskDropdown(){
@@ -97,9 +118,30 @@ async function loadUsers(){
  }catch(e){console.warn(e);}
 }
 async function loadTasks(){
- const snap=await getDocs(query(collection(db,"tasks"),orderBy("date","asc"),orderBy("period","asc")));
- tasks=snap.docs.map(d=>({id:d.id,...d.data()}));renderTasks();
+ const snap=await getDocs(query(collection(db,"tasks"),orderBy("date","asc")));
+ tasks=snap.docs.map(d=>({id:d.id,...d.data()}));renderTasks();renderScheduleTaskDropdowns();
 }
+function subscribeRealtime(){
+ unsubscribeRealtime();
+ unsubs.push(onSnapshot(sharedScheduleRef(),snap=>{
+   currentSchedule=snap.exists()?(snap.data().schedule||{}):{};
+   applyScheduleToUI();
+   syncTaskDropdown().catch(()=>{});
+ },e=>console.warn("schedule listener",e)));
+ unsubs.push(onSnapshot(query(collection(db,"tasks"),orderBy("date","asc")),snap=>{
+   tasks=snap.docs.map(d=>({id:d.id,...d.data()}));
+   renderTasks(); renderScheduleTaskDropdowns();
+ },e=>console.warn("task listener",e)));
+ unsubs.push(onSnapshot(query(collection(db,"users"),orderBy("displayName")),snap=>{
+   users=snap.docs.map(d=>({id:d.id,...d.data()}));
+   $("#userFilter").innerHTML=`<option value="all">Tất cả người dùng</option>`+users.map(u=>`<option value="${escape(u.uid)}">${escape(u.displayName||u.email||"Học sinh")}</option>`).join("");
+   if($( "#leaderboardTab").classList.contains("active"))leaderboard().catch(()=>{});
+ },e=>console.warn("users listener",e)));
+ unsubs.push(onSnapshot(doc(db,"users",user.uid),snap=>{
+   if(snap.exists()){ profile=snap.data(); updateProfileUI(); }
+ },e=>console.warn("profile listener",e)));
+}
+function unsubscribeRealtime(){ unsubs.forEach(fn=>{try{fn()}catch{}}); unsubs=[]; }
 function filteredTasks(){
  const today=iso(new Date()),uf=$("#userFilter").value,sf=$("#subjectFilter").value,q=$("#search").value.trim().toLowerCase();
  return tasks.filter(t=>(period==="current"?t.date>=today:t.date<today)&&(uf==="all"||t.createdBy===uf)&&(sf==="all"||t.subject===sf)&&(!q||`${t.subject} ${t.taskContent} ${t.description||""}`.toLowerCase().includes(q))).sort((a,b)=>a.date.localeCompare(b.date)||PERIODS.findIndex(p=>p[0]===a.period)-PERIODS.findIndex(p=>p[0]===b.period));
@@ -117,27 +159,35 @@ function taskHtml(t){
  return `<article class="task"><div class="task-time"><b>${escape((t.period||"").replace("Sáng - ","Sáng • ").replace("Chiều - ","Chiều • "))}</b><small>${escape(t.startTime||"")}–${escape(t.endTime||"")}</small></div><div class="subject-pill">${escape(t.subject)}</div><div class="task-main"><div class="task-title ${done?"completed":""}">${escape(t.taskContent)}</div><div class="author">${Number(t.points||0)} điểm${t.description?` · ${escape(t.description)}`:""}</div></div><button class="complete" data-complete="${t.id}" ${done?"disabled":""}>${done?"✓ Đã nhận":"Hoàn thành"}</button>${mine?`<button class="icon delete" title="Xóa" data-delete="${t.id}"><i class="fa-solid fa-trash"></i></button>`:""}</article>`;
 }
 async function createTask(){
- const date=$("#taskDate").value,p=$("#taskPeriod").value,subject=$("#taskSubject").value,deadline=$("#deadline").value;
- const row=periodByKey(p);if(!date||!subject||!row)throw new Error("Vui lòng chọn đủ ngày, môn và tiết.");
- await addDoc(collection(db,"tasks"),{createdBy:user.uid,authorName:profile.displayName||"Học sinh",subject,taskContent:$("#taskContent").value.trim(),date,dayOfWeek:dayFromDate(date),period:p,startTime:row[1],endTime:row[2],deadline:new Date(deadline).toISOString(),description:$("#taskDescription").value.trim(),points:Number($("#taskPoints").value),status:"pending",completedBy:[],completedAt:null,createdAt:serverTimestamp()});
- $("#taskDialog").close();$("#taskForm").reset();setTaskDefaults();await loadTasks();toast("Đã tạo nhiệm vụ");
+ const date=$("#taskDate").value,p=$("#taskPeriod").value,subject=$("#taskSubject").value,deadline=$("#deadline").value,content=$("#taskContent").value.trim(),points=Number($("#taskPoints").value);
+ const row=periodByKey(p);
+ if(!date||!subject||!row||!content)throw new Error("Vui lòng chọn đủ ngày, môn, tiết và nhập nhiệm vụ.");
+ const schedule=await loadScheduleForDate(date),day=dayFromDate(date);
+ if(schedule[day]?.[p]!==subject)throw new Error("Môn học không khớp với thời khóa biểu chung của ngày/tiết này.");
+ if(!deadline)throw new Error("Vui lòng chọn hạn nộp.");
+ await addDoc(collection(db,"tasks"),{createdBy:user.uid,authorName:profile.displayName||"Học sinh",subject,taskContent:content,date,dayOfWeek:day,period:p,startTime:row[1],endTime:row[2],deadline:new Date(deadline).toISOString(),description:$("#taskDescription").value.trim(),points,status:"pending",completedBy:[],completedAt:null,createdAt:serverTimestamp()});
+ $("#taskDialog").close();$("#taskForm").reset();setTaskDefaults();toast("Đã tạo nhiệm vụ — mọi người sẽ thấy ngay");
 }
 async function completeTask(id){
  await runTransaction(db,async tx=>{
   const ref=doc(db,"tasks",id),snap=await tx.get(ref);if(!snap.exists())throw new Error("not-found");
   const t=snap.data(),completed=t.completedBy||[];if(completed.includes(user.uid))return;
   const now=new Date(),deadline=new Date(t.deadline),onTime=now<=deadline;
+  let uref=null,us=null,u=null;
+  if(onTime){uref=doc(db,"users",user.uid);us=await tx.get(uref);u=us.data()||{};}
   tx.update(ref,{completedBy:arrayUnion(user.uid),completedAt:serverTimestamp(),status:"completed"});
-  if(onTime){const uref=doc(db,"users",user.uid),us=await tx.get(uref),u=us.data()||{};tx.update(uref,{points:Number(u.points||0)+Number(t.points||0),weeklyPoints:Number(u.weeklyPoints||0)+Number(t.points||0),tasksCompleted:Number(u.tasksCompleted||0)+1})}
+  if(onTime)tx.update(uref,{points:Number(u.points||0)+Number(t.points||0),weeklyPoints:Number(u.weeklyPoints||0)+Number(t.points||0),tasksCompleted:Number(u.tasksCompleted||0)+1});
  });
  await loadProfile();await loadTasks();toast("Đã hoàn thành nhiệm vụ");
 }
 async function deleteTask(id){if(!confirm("Xóa nhiệm vụ này?"))return;await deleteDoc(doc(db,"tasks",id));await loadTasks();toast("Đã xóa nhiệm vụ")}
 
+function updateProfileUI(){
+ $("#headerName").textContent=profile?.displayName||"Học sinh";$("#profileName").textContent=profile?.displayName||"Học sinh";$("#profileEmail").textContent=profile?.email||user?.email||"";$("#avatar").textContent=initials(profile?.displayName||"HS");
+ $("#profileDisplay").value=profile?.displayName||"";$("#profileClass").value=profile?.className||"";$("#points").textContent=profile?.points||0;$("#weekly").textContent=profile?.weeklyPoints||0;$("#completed").textContent=profile?.tasksCompleted||0;
+}
 async function loadProfile(){
- const s=await getDoc(doc(db,"users",user.uid));profile=s.data()||{displayName:user.email?.split("@")[0]||"Học sinh",className:"",points:0,weeklyPoints:0,tasksCompleted:0};
- $("#headerName").textContent=profile.displayName||"Học sinh";$("#profileName").textContent=profile.displayName||"Học sinh";$("#profileEmail").textContent=profile.email||user.email||"";$("#avatar").textContent=initials(profile.displayName||"HS");
- $("#profileDisplay").value=profile.displayName||"";$("#profileClass").value=profile.className||"";$("#points").textContent=profile.points||0;$("#weekly").textContent=profile.weeklyPoints||0;$("#completed").textContent=profile.tasksCompleted||0;
+ const s=await getDoc(doc(db,"users",user.uid));profile=s.data()||{displayName:user.email?.split("@")[0]||"Học sinh",className:"",points:0,weeklyPoints:0,tasksCompleted:0};updateProfileUI();
 }
 async function saveProfile(){const name=$("#profileDisplay").value.trim(),cls=$("#profileClass").value.trim();await updateDoc(doc(db,"users",user.uid),{displayName:name,className:cls});await loadProfile();await loadUsers();toast("Đã cập nhật hồ sơ")}
 async function leaderboard(){const snap=await getDocs(query(collection(db,"users"),orderBy("weeklyPoints","desc")));const top=snap.docs.map(d=>d.data()).slice(0,10);$("#ranking").innerHTML=top.length?top.map((u,i)=>`<div class="rank"><strong>#${i+1}</strong><span>${escape(u.displayName||"Học sinh")} <small class="muted">${escape(u.className||"")}</small></span><span>${u.tasksCompleted||0} nhiệm vụ</span><strong>${u.weeklyPoints||0} điểm</strong></div>`).join(""):`<div class="empty">Chưa có dữ liệu xếp hạng.</div>`}
@@ -155,7 +205,7 @@ $("#newTask").onclick=()=>{$("#taskDialog").showModal();setTaskDefaults()};
 $("#closeDialog").onclick=()=>$("#taskDialog").close();$("#cancelDialog").onclick=()=>$("#taskDialog").close();
 $("#taskForm").onsubmit=e=>{e.preventDefault();createTask().catch(x=>toast(errorMessage(x)))};
 $("#taskDate").onchange=()=>syncTaskDropdown().catch(e=>toast(errorMessage(e)));
-$("#taskSubject").onchange=()=>syncTaskPeriods(taskSchedule);
+$("#taskSubject").onchange=()=>syncTaskPeriods();
 ["userFilter","subjectFilter"].forEach(id=>$("#"+id).onchange=renderTasks);
 $("#search").oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(renderTasks,180)};
 $$('.seg button').forEach(b=>b.onclick=()=>{$$('.seg button').forEach(x=>x.classList.toggle('active',x===b));view=b.dataset.view;renderTasks()});
@@ -167,6 +217,6 @@ onAuthStateChanged(auth,async u=>{
  user=u;
  if(u){
   clearAuthError();$("#auth").classList.add('hidden');$("#app").classList.remove('hidden');$("#headerName").textContent=u.displayName||u.email||"";
-  try{const userRef=doc(db,"users",u.uid),existing=await getDoc(userRef);if(!existing.exists())await setDoc(userRef,{uid:u.uid,email:u.email||"",displayName:u.displayName||u.email?.split('@')[0]||"Học sinh",className:"",points:0,weeklyPoints:0,tasksCompleted:0,createdAt:serverTimestamp()});await loadProfile();fillSubjects();renderSchedule();await loadUsers();await loadTasks()}catch(e){console.error("Firebase init error:",e);toast(errorMessage(e))}
- }else{$("#auth").classList.remove('hidden');$("#app").classList.add('hidden');clearAuthError()}
+  try{const userRef=doc(db,"users",u.uid),existing=await getDoc(userRef);if(!existing.exists())await setDoc(userRef,{uid:u.uid,email:u.email||"",displayName:u.displayName||u.email?.split('@')[0]||"Học sinh",className:"",points:0,weeklyPoints:0,tasksCompleted:0,createdAt:serverTimestamp()});await loadProfile();fillSubjects();renderSchedule();await loadUsers();await loadTasks();subscribeRealtime()}catch(e){console.error("Firebase init error:",e);toast(errorMessage(e))}
+ }else{unsubscribeRealtime();$("#auth").classList.remove('hidden');$("#app").classList.add('hidden');clearAuthError()}
 });

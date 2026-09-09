@@ -2,39 +2,28 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
 
-    // Hàm kiểm tra người dùng đã đăng nhập
-    function signedIn() {
-      return request.auth != null;
-    }
-
-    // Quản lý thông tin người dùng (Users)
     match /users/{uid} {
       allow read: if signedIn();
       allow create, update: if signedIn() && request.auth.uid == uid;
       allow delete: if signedIn() && request.auth.uid == uid;
     }
 
-    // Quản lý thời khóa biểu (Schedules)
-    match /schedules/{scheduleId} {
-      allow read: if signedIn();
-      allow create, update: if signedIn() && request.resource.data.userId == request.auth.uid;
-      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
+    // ONE shared schedule per week. Any signed-in user may update it;
+    // everyone reads the same document.
+    match /schedules/{weekId} {
+      allow read, create, update: if signedIn();
+      allow delete: if signedIn();
     }
 
-    // Quản lý nhiệm vụ (Tasks)
     match /tasks/{taskId} {
       allow read: if signedIn();
-      
-      // Cho phép tạo nếu người tạo chính là tài khoản đang đăng nhập
       allow create: if signedIn() && request.resource.data.createdBy == request.auth.uid;
-      
-      // Cho phép người tạo sửa/xóa HOẶC người học sinh khác bấm nhận/hoàn thành
       allow update: if signedIn();
       allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
     }
 
-    // Bảng xếp hạng (Rankings)
     match /rankings/{weekId} {
       allow read: if signedIn();
       allow write: if false;
