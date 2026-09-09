@@ -10,7 +10,7 @@ const PERIODS=[
  ["Chiều - Tiết 1","13:40","14:25","Chiều","1"],["Chiều - Tiết 2","14:25","15:10","Chiều","2"],["Chiều - Tiết 3","15:15","16:00","Chiều","3"],["Chiều - Tiết 4","16:00","16:45","Chiều","4"]
 ];
 const SUBJECTS=["Toán","Ngữ văn","Tiếng Anh","Vật lý","Hóa học","Sinh học","Lịch sử","Thể dục","GDQP","HDTN","KTPL"];
-let user=null,profile=null,weekStart=monday(new Date()),tasks=[],users=[],view="board",period="current",searchTimer=null,currentSchedule={},taskSchedule={},unsubs=[],scheduleUnsub=null;
+let user=null,profile=null,weekStart=monday(new Date()),tasks=[],users=[],view="board",period="current",searchTimer=null,currentSchedule={},taskSchedule={},unsubs=[],scheduleUnsub=null,scheduleListenerKey=null,scheduleRenderToken=0;
 
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const iso=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");return `${y}-${m}-${day}`};
@@ -35,11 +35,13 @@ function subjectOptions(selected="",subjects=SUBJECTS){
 function sharedScheduleRef(){ return doc(db,"schedules",iso(weekStart)); }
 function sharedScheduleRefFor(date){ return doc(db,"schedules",weekKeyForDate(date)); }
 function scheduleForCurrentWeek(){ return currentSchedule||{}; }
+
 function renderSchedule(){
  const weekKey=iso(weekStart);
- // The realtime listener must always follow the week currently displayed.
- currentSchedule={};
+ const renderToken=++scheduleRenderToken;
+ // Always detach the listener for the previous week before attaching the new one.
  unsubscribeScheduleRealtime();
+ currentSchedule={};
  $("#weekText").textContent=`${weekStart.toLocaleDateString("vi-VN")} – ${new Date(weekStart.getTime()+6*86400000).toLocaleDateString("vi-VN")}`;
  const head=`<thead><tr><th rowspan="2" class="day-col">Thứ</th><th colspan="5" class="session morning">☀️ Sáng</th><th colspan="4" class="session afternoon">🌙 Chiều</th></tr><tr>${PERIODS.map(p=>`<th class="period-head ${p[3]==="Sáng"?"morning":"afternoon"}">Tiết ${p[4]}<small>${p[1]}–${p[2]}</small></th>`).join("")}</tr></thead>`;
  const body=`<tbody>${DAYS.map((d,di)=>`<tr><th class="day-name">${d}<small>${new Date(weekStart.getTime()+di*86400000).toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit"})}</small></th>${PERIODS.map(p=>{
@@ -48,40 +50,77 @@ function renderSchedule(){
  }).join("")}</tr>`).join("")}</tbody>`;
  $("#scheduleTable").innerHTML=head+body;
  applyScheduleToUI();
- renderScheduleTaskDropdowns();
- loadScheduleForCurrentWeek().catch(e=>toast(errorMessage(e)));
- if(user) subscribeScheduleRealtime();
+ if(user) subscribeScheduleRealtime(weekKey,renderToken);
 }
+
 function applyScheduleToUI(){
  $$(".schedule-input").forEach(e=>e.value=currentSchedule[e.dataset.day]?.[e.dataset.period]||"");
  renderScheduleTaskDropdowns();
 }
-async function loadScheduleForCurrentWeek(){
- const s=await getDoc(sharedScheduleRef());
- currentSchedule=s.exists()?(s.data().schedule||{}):{};
- applyScheduleToUI();
- await syncTaskDropdown();
+
+function subscribeScheduleRealtime(expectedWeekKey=iso(weekStart),renderToken=scheduleRenderToken){
+ unsubscribeScheduleRealtime();
+ if(!user)return;
+ const ref=doc(db,"schedules",expectedWeekKey);
+ scheduleListenerKey=expectedWeekKey;
+ scheduleUnsub=onSnapshot(ref,snap=>{
+   // Ignore a late callback from an old week/user render.
+   if(!user || scheduleListenerKey!==expectedWeekKey || renderToken!==scheduleRenderToken) return;
+   currentSchedule=snap.exists()?(snap.data().schedule||{}):{};
+   applyScheduleToUI();
+   syncTaskDropdown().catch(e=>console.warn("sync task dropdown after schedule update:",e));
+ },e=>{
+   if(scheduleListenerKey!==expectedWeekKey || renderToken!==scheduleRenderToken)return;
+   console.error("schedule listener",e);
+   toast(`Không thể đồng bộ TKB: ${errorMessage(e)}`);
+ });
 }
+
+function unsubscribeScheduleRealtime(){
+ if(scheduleUnsub){ try{scheduleUnsub()}catch(e){console.warn("unsubscribe schedule failed",e)} scheduleUnsub=null; }
+ scheduleListenerKey=null;
+}
+
 async function saveSchedule(){
- if(!user) throw new Error("Bạn chưa đăng nhập. Hãy đăng nhập rồi lưu thời khóa biểu.");
+ if(!user){
+   toast("Bạn chưa đăng nhập. Hãy đăng nhập rồi lưu thời khóa biểu.");
+   throw new Error("Bạn chưa đăng nhập. Hãy đăng nhập rồi lưu thời khóa biểu.");
+ }
+ const uid=user.uid;
+ const weekKey=iso(weekStart);
+ const ref=doc(db,"schedules",weekKey);
  const schedule={};
  DAYS.forEach(d=>{schedule[d]={};PERIODS.forEach(p=>{schedule[d][p[0]]=$( `.schedule-input[data-day="${d}"][data-period="${p[0]}"]`)?.value||""})});
  try {
-  await setDoc(sharedScheduleRef(),{
-   weekStart:iso(weekStart),
+  await setDoc(ref,{
+   weekStart:weekKey,
    schedule,
    updatedAt:serverTimestamp(),
-   updatedBy:user.uid,
+   updatedBy:uid,
    updatedByName:profile?.displayName||user.displayName||"Học sinh"
   },{merge:true});
+  // Keep local UI responsive; the realtime listener remains the source of truth.
+  if(user?.uid===uid && iso(weekStart)===weekKey){
+   currentSchedule=schedule;
+   applyScheduleToUI();
+  }
+  toast("Đã cập nhật TKB chung cho mọi người");
  } catch(e) {
   console.error("saveSchedule failed:",e);
+  toast(`Lưu TKB thất bại: ${errorMessage(e)}`);
   throw e;
  }
- currentSchedule=schedule;
- await syncTaskDropdown();
- renderScheduleTaskDropdowns();
- toast("Đã cập nhật TKB chung cho mọi người");
+}
+
+async function loadScheduleForCurrentWeek(){
+ // Kept for compatibility with existing callers; realtime listener handles live updates.
+ if(!user)return {};
+ const weekKey=iso(weekStart);
+ const s=await getDoc(doc(db,"schedules",weekKey));
+ if(iso(weekStart)!==weekKey)return currentSchedule;
+ currentSchedule=s.exists()?(s.data().schedule||{}):{};
+ applyScheduleToUI();
+ return currentSchedule;
 }
 function renderScheduleTaskDropdowns(){
  $$(".schedule-task-select").forEach(sel=>{
@@ -138,20 +177,9 @@ async function loadTasks(){
  const snap=await getDocs(query(collection(db,"tasks"),orderBy("date","asc")));
  tasks=snap.docs.map(d=>({id:d.id,...d.data()}));renderTasks();renderScheduleTaskDropdowns();
 }
-function subscribeScheduleRealtime(){
- unsubscribeScheduleRealtime();
- scheduleUnsub=onSnapshot(sharedScheduleRef(),snap=>{
-   currentSchedule=snap.exists()?(snap.data().schedule||{}):{};
-   applyScheduleToUI();
-   syncTaskDropdown().catch(()=>{});
- },e=>console.error("schedule listener",e));
-}
-function unsubscribeScheduleRealtime(){
- if(scheduleUnsub){ try{scheduleUnsub()}catch{} scheduleUnsub=null; }
-}
 function subscribeRealtime(){
- // Keep the schedule listener separate so changing weeks does not leave a stale listener.
- subscribeScheduleRealtime();
+ // Schedule has its own lifecycle because week navigation replaces its document listener.
+ subscribeScheduleRealtime(iso(weekStart),scheduleRenderToken);
  unsubs.push(onSnapshot(query(collection(db,"tasks"),orderBy("date","asc")),snap=>{
    tasks=snap.docs.map(d=>({id:d.id,...d.data()}));
    renderTasks(); renderScheduleTaskDropdowns();
@@ -187,13 +215,14 @@ function taskHtml(t){
  return `<article class="task"><div class="task-time"><b>${escape((t.period||"").replace("Sáng - ","Sáng • ").replace("Chiều - ","Chiều • "))}</b><small>${escape(t.startTime||"")}–${escape(t.endTime||"")}</small></div><div class="subject-pill">${escape(t.subject)}</div><div class="task-main"><div class="task-title ${done?"completed":""}">${escape(t.taskContent)}</div><div class="author">${Number(t.points||0)} điểm${t.description?` · ${escape(t.description)}`:""}</div></div><button class="complete" data-complete="${t.id}" ${done?"disabled":""}>${done?"✓ Đã nhận":"Hoàn thành"}</button>${mine?`<button class="icon delete" title="Xóa" data-delete="${t.id}"><i class="fa-solid fa-trash"></i></button>`:""}</article>`;
 }
 async function createTask(){
+ if(!user)throw new Error("Bạn chưa đăng nhập. Hãy đăng nhập rồi tạo nhiệm vụ.");
  const date=$("#taskDate").value,p=$("#taskPeriod").value,subject=$("#taskSubject").value,deadline=$("#deadline").value,content=$("#taskContent").value.trim(),points=Number($("#taskPoints").value);
  const row=periodByKey(p);
  if(!date||!subject||!row||!content)throw new Error("Vui lòng chọn đủ ngày, môn, tiết và nhập nhiệm vụ.");
  const schedule=await loadScheduleForDate(date),day=dayFromDate(date);
  if(schedule[day]?.[p]!==subject)throw new Error("Môn học không khớp với thời khóa biểu chung của ngày/tiết này.");
  if(!deadline)throw new Error("Vui lòng chọn hạn nộp.");
- await addDoc(collection(db,"tasks"),{createdBy:user.uid,authorName:profile.displayName||"Học sinh",subject,taskContent:content,date,dayOfWeek:day,period:p,startTime:row[1],endTime:row[2],deadline:new Date(deadline).toISOString(),description:$("#taskDescription").value.trim(),points,status:"pending",completedBy:[],completedAt:null,createdAt:serverTimestamp()});
+ await addDoc(collection(db,"tasks"),{createdBy:user.uid,authorName:profile?.displayName||user.displayName||"Học sinh",subject,taskContent:content,date,dayOfWeek:day,period:p,startTime:row[1],endTime:row[2],deadline:new Date(deadline).toISOString(),description:$("#taskDescription").value.trim(),points,status:"pending",completedBy:[],completedAt:null,createdAt:serverTimestamp()});
  $("#taskDialog").close();$("#taskForm").reset();setTaskDefaults();toast("Đã tạo nhiệm vụ — mọi người sẽ thấy ngay");
 }
 async function completeTask(id){
@@ -246,5 +275,5 @@ onAuthStateChanged(auth,async u=>{
  if(u){
   clearAuthError();$("#auth").classList.add('hidden');$("#app").classList.remove('hidden');$("#headerName").textContent=u.displayName||u.email||"";
   try{const userRef=doc(db,"users",u.uid),existing=await getDoc(userRef);if(!existing.exists())await setDoc(userRef,{uid:u.uid,email:u.email||"",displayName:u.displayName||u.email?.split('@')[0]||"Học sinh",className:"",points:0,weeklyPoints:0,tasksCompleted:0,createdAt:serverTimestamp()});await loadProfile();fillSubjects();renderSchedule();await loadUsers();await loadTasks();subscribeRealtime()}catch(e){console.error("Firebase init error:",e);toast(errorMessage(e))}
- }else{unsubscribeRealtime();$("#auth").classList.remove('hidden');$("#app").classList.add('hidden');clearAuthError()}
+ }else{scheduleRenderToken++;unsubscribeRealtime();$("#auth").classList.remove('hidden');$("#app").classList.add('hidden');clearAuthError()}
 });
