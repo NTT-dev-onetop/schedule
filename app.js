@@ -107,6 +107,32 @@ function unsubscribeScheduleRealtime(){
  scheduleListenerKey=null;
 }
 
+function syncScheduleInputGroup(source){
+ const day=source?.dataset?.day, period=source?.dataset?.period;
+ if(!day||!period)return;
+ const value=source.value||"";
+ $$(`.schedule-input[data-day="${CSS.escape(day)}"][data-period="${CSS.escape(period)}"]`).forEach(input=>{
+   if(input!==source && input.value!==value)input.value=value;
+ });
+ currentSchedule[day]??={};
+ currentSchedule[day][period]=value;
+ renderScheduleTaskDropdowns();
+}
+
+function collectScheduleFromUI(){
+ const schedule={};
+ DAYS.forEach(d=>{
+   schedule[d]={};
+   PERIODS.forEach(p=>{
+     const inputs=$$(`.schedule-input[data-day="${CSS.escape(d)}"][data-period="${CSS.escape(p[0])}"]`);
+     // Desktop and mobile render the same cell. The change handler keeps them
+     // mirrored, so the first value is enough; fall back to any non-empty value.
+     schedule[d][p[0]]=inputs.find(x=>x.value)?.value||inputs[0]?.value||"";
+   });
+ });
+ return schedule;
+}
+
 async function saveSchedule(){
  if(!user){
    toast("Bạn chưa đăng nhập. Hãy đăng nhập rồi lưu thời khóa biểu.");
@@ -115,8 +141,9 @@ async function saveSchedule(){
  const uid=user.uid;
  const weekKey=iso(weekStart);
  const ref=doc(db,"schedules",weekKey);
- const schedule={};
- DAYS.forEach(d=>{schedule[d]={};PERIODS.forEach(p=>{schedule[d][p[0]]=$( `.schedule-input[data-day="${d}"][data-period="${p[0]}"]`)?.value||""})});
+ // Collect ALL 6 days in one pass. Mobile and desktop inputs are mirrored,
+ // so changing any day/period is included in this single weekly write.
+ const schedule=collectScheduleFromUI();
  try {
   setSyncStatus("saving","Đang lưu...");
   await setDoc(ref,{
@@ -286,6 +313,10 @@ $$('.nav').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
 $("#prevWeek").onclick=()=>{weekStart.setDate(weekStart.getDate()-7);renderSchedule()};
 $("#nextWeek").onclick=()=>{weekStart.setDate(weekStart.getDate()+7);renderSchedule()};
 $("#thisWeek").onclick=()=>{weekStart=monday(new Date());renderSchedule()};
+document.addEventListener("change",e=>{
+ const input=e.target.closest?.(".schedule-input");
+ if(input)syncScheduleInputGroup(input);
+});
 $("#saveSchedule").onclick=()=>saveSchedule().catch(e=>toast(errorMessage(e)));
 $("#newTask").onclick=()=>{$("#taskDialog").showModal();setTaskDefaults()};
 $("#closeDialog").onclick=()=>$("#taskDialog").close();$("#cancelDialog").onclick=()=>$("#taskDialog").close();
