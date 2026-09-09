@@ -14,6 +14,12 @@
 </head>
 <body>
 <div id="toast" class="toast" aria-live="polite"></div>
+<div id="notificationPanel" class="notification-panel" aria-hidden="true">
+  <div class="notification-head"><div><strong>🔔 Thông báo</strong><small id="notificationSummary">Nhiệm vụ sắp tới</small></div><button id="closeNotifications" class="icon" type="button" aria-label="Đóng">×</button></div>
+  <div id="notificationList" class="notification-list"></div>
+  <div class="notification-foot"><button id="enableDesktopNotifications" class="btn ghost full" type="button"><i class="fa-regular fa-bell"></i> Bật thông báo màn hình</button></div>
+</div>
+<div id="taskAlert" class="task-alert" role="status" aria-live="polite" aria-hidden="true"></div>
 <section id="auth" class="auth-page">
   <div class="auth-box"><div class="brand brand-center"><i class="fa-solid fa-graduation-cap"></i> SchoolTask</div><p class="muted center">Quản lý thời khóa biểu & nhiệm vụ học tập</p><div id="authErr" class="auth-error hidden" role="alert"></div><div class="google-login-wrap"><button id="googleLogin" class="btn primary full google-btn" type="button"><i class="fa-brands fa-google"></i> Đăng nhập bằng Google</button><p class="muted center auth-note">Chỉ cần tài khoản Gmail/Google, không cần tạo mật khẩu.</p></div></div>
 </section>
@@ -22,7 +28,7 @@
 <header class="topbar">
   <div class="brand"><i class="fa-solid fa-graduation-cap"></i><span>SchoolTask</span></div>
   <div class="topbar-title"><span>Quản lý nhiệm vụ học tập</span><span id="syncStatus" class="sync-status online"><i class="fa-solid fa-wifi"></i> Đang đồng bộ</span></div>
-  <div class="user"><span id="headerName">Học sinh</span><button id="logout" class="icon" title="Đăng xuất" aria-label="Đăng xuất"><i class="fa-solid fa-right-from-bracket"></i></button></div>
+  <div class="user"><button id="notificationBtn" class="notification-btn" title="Thông báo" aria-label="Thông báo"><i class="fa-regular fa-bell"></i><span id="notificationBadge" class="notification-badge hidden">0</span></button><span id="headerName">Học sinh</span><button id="logout" class="icon" title="Đăng xuất" aria-label="Đăng xuất"><i class="fa-solid fa-right-from-bracket"></i></button></div>
 </header>
 <div class="app-layout">
 <aside class="sidebar">
