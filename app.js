@@ -10,7 +10,7 @@ const PERIODS=[
  ["Chiều - Tiết 1","13:40","14:25","Chiều","1"],["Chiều - Tiết 2","14:25","15:10","Chiều","2"],["Chiều - Tiết 3","15:15","16:00","Chiều","3"],["Chiều - Tiết 4","16:00","16:45","Chiều","4"]
 ];
 const SUBJECTS=["Toán","Ngữ văn","Tiếng Anh","Vật lý","Hóa học","Sinh học","Lịch sử","Thể dục","GDQP","HDTN","KTPL"];
-let user=null,profile=null,weekStart=monday(new Date()),tasks=[],users=[],view="board",period="current",searchTimer=null,currentSchedule={},taskSchedule={},unsubs=[];
+let user=null,profile=null,weekStart=monday(new Date()),tasks=[],users=[],view="board",period="current",searchTimer=null,currentSchedule={},taskSchedule={},unsubs=[],scheduleUnsub=null;
 
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const iso=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");return `${y}-${m}-${day}`};
@@ -33,9 +33,13 @@ function subjectOptions(selected="",subjects=SUBJECTS){
 }
 
 function sharedScheduleRef(){ return doc(db,"schedules",iso(weekStart)); }
+function sharedScheduleRefFor(date){ return doc(db,"schedules",weekKeyForDate(date)); }
 function scheduleForCurrentWeek(){ return currentSchedule||{}; }
 function renderSchedule(){
  const weekKey=iso(weekStart);
+ // The realtime listener must always follow the week currently displayed.
+ currentSchedule={};
+ unsubscribeScheduleRealtime();
  $("#weekText").textContent=`${weekStart.toLocaleDateString("vi-VN")} – ${new Date(weekStart.getTime()+6*86400000).toLocaleDateString("vi-VN")}`;
  const head=`<thead><tr><th rowspan="2" class="day-col">Thứ</th><th colspan="5" class="session morning">☀️ Sáng</th><th colspan="4" class="session afternoon">🌙 Chiều</th></tr><tr>${PERIODS.map(p=>`<th class="period-head ${p[3]==="Sáng"?"morning":"afternoon"}">Tiết ${p[4]}<small>${p[1]}–${p[2]}</small></th>`).join("")}</tr></thead>`;
  const body=`<tbody>${DAYS.map((d,di)=>`<tr><th class="day-name">${d}<small>${new Date(weekStart.getTime()+di*86400000).toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit"})}</small></th>${PERIODS.map(p=>{
@@ -46,6 +50,7 @@ function renderSchedule(){
  applyScheduleToUI();
  renderScheduleTaskDropdowns();
  loadScheduleForCurrentWeek().catch(e=>toast(errorMessage(e)));
+ if(user) subscribeScheduleRealtime();
 }
 function applyScheduleToUI(){
  $$(".schedule-input").forEach(e=>e.value=currentSchedule[e.dataset.day]?.[e.dataset.period]||"");
@@ -58,9 +63,21 @@ async function loadScheduleForCurrentWeek(){
  await syncTaskDropdown();
 }
 async function saveSchedule(){
+ if(!user) throw new Error("Bạn chưa đăng nhập. Hãy đăng nhập rồi lưu thời khóa biểu.");
  const schedule={};
  DAYS.forEach(d=>{schedule[d]={};PERIODS.forEach(p=>{schedule[d][p[0]]=$( `.schedule-input[data-day="${d}"][data-period="${p[0]}"]`)?.value||""})});
- await setDoc(sharedScheduleRef(),{weekStart:iso(weekStart),schedule,updatedAt:serverTimestamp(),updatedBy:user.uid,updatedByName:profile?.displayName||user.displayName||"Học sinh"},{merge:true});
+ try {
+  await setDoc(sharedScheduleRef(),{
+   weekStart:iso(weekStart),
+   schedule,
+   updatedAt:serverTimestamp(),
+   updatedBy:user.uid,
+   updatedByName:profile?.displayName||user.displayName||"Học sinh"
+  },{merge:true});
+ } catch(e) {
+  console.error("saveSchedule failed:",e);
+  throw e;
+ }
  currentSchedule=schedule;
  await syncTaskDropdown();
  renderScheduleTaskDropdowns();
@@ -121,13 +138,20 @@ async function loadTasks(){
  const snap=await getDocs(query(collection(db,"tasks"),orderBy("date","asc")));
  tasks=snap.docs.map(d=>({id:d.id,...d.data()}));renderTasks();renderScheduleTaskDropdowns();
 }
-function subscribeRealtime(){
- unsubscribeRealtime();
- unsubs.push(onSnapshot(sharedScheduleRef(),snap=>{
+function subscribeScheduleRealtime(){
+ unsubscribeScheduleRealtime();
+ scheduleUnsub=onSnapshot(sharedScheduleRef(),snap=>{
    currentSchedule=snap.exists()?(snap.data().schedule||{}):{};
    applyScheduleToUI();
    syncTaskDropdown().catch(()=>{});
- },e=>console.warn("schedule listener",e)));
+ },e=>console.error("schedule listener",e));
+}
+function unsubscribeScheduleRealtime(){
+ if(scheduleUnsub){ try{scheduleUnsub()}catch{} scheduleUnsub=null; }
+}
+function subscribeRealtime(){
+ // Keep the schedule listener separate so changing weeks does not leave a stale listener.
+ subscribeScheduleRealtime();
  unsubs.push(onSnapshot(query(collection(db,"tasks"),orderBy("date","asc")),snap=>{
    tasks=snap.docs.map(d=>({id:d.id,...d.data()}));
    renderTasks(); renderScheduleTaskDropdowns();
@@ -141,7 +165,11 @@ function subscribeRealtime(){
    if(snap.exists()){ profile=snap.data(); updateProfileUI(); }
  },e=>console.warn("profile listener",e)));
 }
-function unsubscribeRealtime(){ unsubs.forEach(fn=>{try{fn()}catch{}}); unsubs=[]; }
+function unsubscribeRealtime(){
+ unsubscribeScheduleRealtime();
+ unsubs.forEach(fn=>{try{fn()}catch{}});
+ unsubs=[];
+}
 function filteredTasks(){
  const today=iso(new Date()),uf=$("#userFilter").value,sf=$("#subjectFilter").value,q=$("#search").value.trim().toLowerCase();
  return tasks.filter(t=>(period==="current"?t.date>=today:t.date<today)&&(uf==="all"||t.createdBy===uf)&&(sf==="all"||t.subject===sf)&&(!q||`${t.subject} ${t.taskContent} ${t.description||""}`.toLowerCase().includes(q))).sort((a,b)=>a.date.localeCompare(b.date)||PERIODS.findIndex(p=>p[0]===a.period)-PERIODS.findIndex(p=>p[0]===b.period));
