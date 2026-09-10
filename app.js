@@ -11,7 +11,7 @@ const PERIODS=[
 ];
 const SUBJECTS=["Toán","Ngữ văn","Tiếng Anh","Vật lý","Hóa học","Sinh học","Lịch sử","Thể dục","GDQP","HDTN","KTPL"];
 let notificationTimer=null,notificationLastSnapshot="",notificationPanelOpen=false,taskDialogReturnFocus=null,lastDefaultDeadline="",lastCompletionUndo=null;
-let user=null,profile=null,weekStart=monday(new Date()),tasks=[],users=[],view="board",period="current",statusFilter="all",searchTimer=null,currentSchedule={},taskSchedule={},unsubs=[],scheduleUnsub=null,scheduleListenerKey=null,scheduleRenderToken=0,scheduleDirty=false,defaultTabDecided=false,mobileDayIndex=Math.max(0,Math.min(5,new Date().getDay()-1));
+let user=null,profile=null,weekStart=monday(new Date()),tasks=[],users=[],view="board",period="current",statusFilter="all",searchTimer=null,currentSchedule={},taskSchedule={},unsubs=[],scheduleUnsub=null,scheduleListenerKey=null,scheduleRenderToken=0,scheduleDirty=false,mobileDayIndex=Math.max(0,Math.min(5,new Date().getDay()-1));
 
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const iso=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");return `${y}-${m}-${day}`};
@@ -61,7 +61,6 @@ function subjectColor(subject=""){
  let h=0; for(const c of subject)h=(h*31+c.charCodeAt(0))%360;
  return `hsl(${h} 72% 42%)`;
 }
-function hasScheduleEntries(schedule=currentSchedule){return Object.values(schedule||{}).some(row=>Object.values(row||{}).some(Boolean))}
 function formatDeadline(t){const d=taskDeadlineDate(t);return d.toLocaleString("vi-VN",{hour:"2-digit",minute:"2-digit",day:"2-digit",month:"2-digit"})}
 function deadlineClass(t){const diff=taskDeadlineDate(t)-Date.now();return diff<0?"deadline-overdue":diff<=86400000?"deadline-urgent":""}
 function highlightText(value,q){const safe=escape(value||"");const needle=escape(q.trim());if(!needle)return safe;const pattern=needle.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");return safe.replace(new RegExp(`(${pattern})`,"gi"),"<mark>$1</mark>")}
@@ -111,7 +110,7 @@ function subscribeScheduleRealtime(expectedWeekKey=iso(weekStart),renderToken=sc
    if(!user || scheduleListenerKey!==expectedWeekKey || renderToken!==scheduleRenderToken)return;
    const incoming=snap.exists()?(snap.data().schedule||{}):{},updated=snap.data()?.updatedAt?.toMillis?.()||null,wasFirst=first;
    first=false;currentSchedule=incoming;applyScheduleToUI();setSyncStatus("online","Đang đồng bộ");
-   if(!defaultTabDecided){defaultTabDecided=true;switchTab(hasScheduleEntries(incoming)?"schedule":"tasks")}
+   if(wasFirst)switchTab("tasks");
    if(!wasFirst&&snap.exists()&&snap.metadata?.hasPendingWrites===false&&updated!==null&&updated!==lastUpdatedAt)toast("🔄 TKB vừa được cập nhật");
    if(updated!==null)lastUpdatedAt=updated;
    syncTaskDropdown().catch(e=>console.warn("sync task dropdown after schedule update:",e));
@@ -290,8 +289,8 @@ function renderTasks(){
 }
 function renderList(list){$("#taskArea").innerHTML=`<div class="day">${list.map(taskHtml).join("")}</div>`}
 function taskHtml(t){
- const mine=t.createdBy===user.uid,done=(t.completedBy||[]).includes(user.uid),q=$("#search")?.value.trim()||"",diff=taskDeadlineDate(t)-Date.now(),deadlineIcon=diff<0?"⚠️":"⏰";
- return `<article class="task" data-task-card="${escape(t.id)}"><div class="task-time"><b>${escape((t.period||"").replace("Sáng - ","Sáng • ").replace("Chiều - ","Chiều • "))}</b><small>${escape(t.startTime||"")}–${escape(t.endTime||"")}</small><div class="task-deadline ${deadlineClass(t)}">${deadlineIcon} Hạn: ${formatDeadline(t)} · ${taskTimeLabel(t)}</div></div><div class="subject-pill">${escape(t.subject)}</div><div class="task-main"><div class="task-title ${done?"completed":""}">${highlightText(t.taskContent,q)}</div><div class="author">${Number(t.points||0)} điểm${t.description?` · ${escape(t.description)}`:""}${t.authorName?` · 👤 ${escape(t.authorName)}`:""}</div></div><button class="complete" data-complete="${escape(t.id)}" aria-label="Đánh dấu hoàn thành nhiệm vụ ${escape(t.taskContent)}" ${done?"disabled":""}>${done?"✓ Đã xong":"Hoàn thành"}</button>${mine?`<button class="icon delete" title="Xóa" aria-label="Xóa nhiệm vụ ${escape(t.taskContent)}" data-delete="${escape(t.id)}"><i class="fa-solid fa-trash"></i></button>`:""}</article>`;
+ const mine=t.createdBy===user.uid,done=(t.completedBy||[]).includes(user.uid),q=$("#search")?.value.trim()||"",diff=taskDeadlineDate(t)-Date.now(),deadlineIcon=diff<0?"⚠️":diff<=86400000?"⏰":"📅";
+ return `<article class="task" data-task-card="${escape(t.id)}"><div class="task-time"><b>${escape((t.period||"").replace("Sáng - ","Sáng • ").replace("Chiều - ","Chiều • "))}</b><small>${escape(t.startTime||"")}–${escape(t.endTime||"")}</small></div><div class="subject-pill">${escape(t.subject)}</div><div class="task-main"><div class="task-title ${done?"completed":""}">${highlightText(t.taskContent,q)}</div><div class="task-deadline ${deadlineClass(t)}">${deadlineIcon} Hạn: ${formatDeadline(t)} · ${taskTimeLabel(t)}</div><div class="author">${Number(t.points||0)} điểm${t.description?` · ${escape(t.description)}`:""}${t.authorName?` · 👤 ${escape(t.authorName)}`:""}</div></div><button class="complete" data-complete="${escape(t.id)}" aria-label="Đánh dấu hoàn thành nhiệm vụ ${escape(t.taskContent)}" ${done?"disabled":""}>${done?"✓ Đã xong":"Hoàn thành"}</button>${mine?`<button class="icon delete" title="Xóa" aria-label="Xóa nhiệm vụ ${escape(t.taskContent)}" data-delete="${escape(t.id)}"><i class="fa-solid fa-trash"></i></button>`:""}</article>`;
 }
 async function createTask(){
  if(!user)throw new Error("Bạn chưa đăng nhập. Hãy đăng nhập rồi tạo nhiệm vụ.");
@@ -378,7 +377,7 @@ window.addEventListener("online",updateOnlineStatus);window.addEventListener("of
 onAuthStateChanged(auth,async u=>{
  user=u;
  if(u){
-  defaultTabDecided=false;scheduleDirty=false;clearAuthError();$("#auth").classList.add('hidden');$("#app").classList.remove('hidden');$("#headerName").textContent=u.displayName||u.email||"";
+  scheduleDirty=false;clearAuthError();$("#auth").classList.add('hidden');$("#app").classList.remove('hidden');$("#headerName").textContent=u.displayName||u.email||"";
   try{const userRef=doc(db,"users",u.uid),existing=await getDoc(userRef);if(!existing.exists())await setDoc(userRef,{uid:u.uid,email:u.email||"",displayName:u.displayName||u.email?.split('@')[0]||"Học sinh",className:"",points:0,weeklyPoints:0,tasksCompleted:0,streak:0,lastCompletedDate:"",createdAt:serverTimestamp()});await loadProfile();fillSubjects();renderSchedule();await loadUsers();await loadTasks();subscribeRealtime()}catch(e){console.error("Firebase init error:",e);toast(errorMessage(e))}
- }else{defaultTabDecided=false;scheduleDirty=false;notificationLastSnapshot="";if(notificationPanelOpen)closeNotifications();scheduleRenderToken++;unsubscribeRealtime();$("#auth").classList.remove('hidden');$("#app").classList.add('hidden');clearAuthError()}
+ }else{scheduleDirty=false;notificationLastSnapshot="";if(notificationPanelOpen)closeNotifications();scheduleRenderToken++;unsubscribeRealtime();$("#auth").classList.remove('hidden');$("#app").classList.add('hidden');clearAuthError()}
 });

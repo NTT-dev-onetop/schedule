@@ -34,22 +34,22 @@
 <div class="app-layout">
 <aside class="sidebar">
   <nav>
-    <button class="nav active" data-tab="schedule"><i class="fa-regular fa-calendar"></i><span>Thời khóa biểu</span></button>
-    <button class="nav" data-tab="tasks"><i class="fa-solid fa-list-check"></i><span>Nhiệm vụ</span><span id="taskBadge" class="nav-badge hidden">0</span></button>
+    <button class="nav" data-tab="schedule"><i class="fa-regular fa-calendar"></i><span>Thời khóa biểu</span></button>
+    <button class="nav active" data-tab="tasks"><i class="fa-solid fa-list-check"></i><span>Nhiệm vụ</span><span id="taskBadge" class="nav-badge hidden">0</span></button>
     <button class="nav" data-tab="leaderboard"><i class="fa-solid fa-ranking-star"></i><span>Bảng xếp hạng</span></button>
     <button class="nav" data-tab="profile"><i class="fa-regular fa-user"></i><span>Hồ sơ</span></button>
   </nav>
   <div class="sidebar-foot"><span>🌱 Học tốt – Làm tốt – Thành công</span><small> 2026 – Nguyễn Trung Trực</small></div>
 </aside>
 <main class="container">
-<section id="scheduleTab" class="tab active">
+<section id="scheduleTab" class="tab">
   <div class="head schedule-head"><div><span class="eyebrow"><i class="fa-regular fa-calendar"></i> THỜI KHÓA BIỂU CHUNG</span><h1>Thời khóa biểu</h1><p id="weekText" class="muted"></p></div><div class="actions"><button id="prevWeek" class="icon-btn" title="Tuần trước" aria-label="Tuần trước">‹</button><button id="thisWeek" class="btn ghost" aria-label="Về tuần hiện tại">Hôm nay</button><button id="nextWeek" class="icon-btn" title="Tuần sau" aria-label="Tuần sau">›</button><button id="saveSchedule" class="btn primary"><i class="fa-solid fa-floppy-disk"></i> Lưu TKB</button></div></div>
   <div class="schedule-meta"><div><span class="live-dot"></span><strong>TKB dùng chung</strong><span>Thay đổi sẽ cập nhật cho người khác ngay.</span></div><div id="saveHint">Chọn môn trực tiếp trên lịch</div></div>
   <div id="mobileDaySelector" class="day-selector" aria-label="Chọn ngày"></div>
   <div class="card schedule-card"><div class="table-scroll desktop-schedule"><table id="scheduleTable"></table></div><div id="mobileSchedule" class="mobile-schedule"></div><div class="schedule-hint"><span><i class="fa-solid fa-circle-check"></i> Mỗi ô là một môn học</span><span><i class="fa-solid fa-bolt"></i> Đồng bộ realtime</span></div></div>
 </section>
 
-<section id="tasksTab" class="tab">
+<section id="tasksTab" class="tab active">
   <div class="head"><div><span class="eyebrow"><i class="fa-solid fa-list-check"></i> HỌC TẬP</span><h1>Nhiệm vụ</h1><p class="muted">Môn học và tiết được lấy từ thời khóa biểu đã lưu.</p></div><button id="newTask" class="btn primary"><i class="fa-solid fa-plus"></i> Tạo nhiệm vụ </button></div>
   <div class="toolbar card"><div class="seg"><button class="active" data-view="board">Bảng</button><button data-view="list">Danh sách</button></div><div class="user-filter-group"><select id="userFilter" aria-label="Lọc theo người tạo"><option value="all">Tất cả người dùng</option></select><div class="quick-chips" aria-label="Lọc nhanh người dùng"><button type="button" class="quick-chip" data-user-quick="self">Của tôi</button><button type="button" class="quick-chip active" data-user-quick="all">Cả lớp</button></div></div><select id="subjectFilter" aria-label="Lọc theo môn"><option value="all">Tất cả môn</option></select><div class="search-wrap"><input id="search" type="search" placeholder="Tìm kiếm nhiệm vụ..." aria-label="Tìm kiếm nhiệm vụ"><button id="clearSearch" class="search-clear hidden" type="button" aria-label="Xóa tìm kiếm">×</button></div></div>
   <div class="subtabs"><button class="active" data-period="current">Hiện tại</button><button data-period="past">Đã qua</button></div><div class="status-chips" aria-label="Lọc theo trạng thái"><button class="status-chip active" type="button" data-status-filter="all">Tất cả</button><button class="status-chip" type="button" data-status-filter="minePending">Chưa xong (của tôi)</button><button class="status-chip" type="button" data-status-filter="overdue">Quá hạn</button><button class="status-chip" type="button" data-status-filter="done">Đã xong</button></div><div id="taskArea"></div>
@@ -61,7 +61,7 @@
 <footer>Cảm ơn mọi người đã dùng - nếu có góp ý thì cứ liên hệ mình nha </footer>
 </div>
 
-<dialog id="taskDialog"><form id="taskForm" class="dialog"><div class="dialog-head"><div><span class="eyebrow">TẠO MỚI</span><h2>Tạo nhiệm vụ</h2></div><button id="closeDialog" type="button" class="icon">×</button></div><p class="dialog-note"><i class="fa-solid fa-link"></i> Chọn ngày → môn trong thời khóa biểu → tiết học.</p><p id="taskScheduleNote" class="dialog-warning hidden" role="alert"></p><div class="form-grid"><label>Ngày<input id="taskDate" type="date" required></label><label>Môn học<select id="taskSubject" required></select></label><label>Tiết học<select id="taskPeriod" required></select></label><label>Hạn nộp<input id="deadline" type="datetime-local" required></label><label>Điểm<input id="taskPoints" type="number" min="0" max="100" value="10" required></label><label class="wide">Nhiệm vụ<textarea id="taskContent" rows="3" maxlength="500" placeholder="Ví dụ: Làm bài tập trang 25–27" required></textarea></label><label class="wide">Mô tả<textarea id="taskDescription" rows="2" maxlength="1000" placeholder="Ghi chú thêm (nếu có)"></textarea></label></div><div class="dialog-actions"><button id="cancelDialog" type="button" class="btn ghost">Hủy</button><button id="saveTaskBtn" class="btn primary" type="submit"><i class="fa-solid fa-check"></i> Lưu nhiệm vụ</button></div></form></dialog>
+<dialog id="taskDialog"><form id="taskForm" class="dialog"><div class="dialog-head"><div><span class="eyebrow">TẠO MỚI</span><h2>Tạo nhiệm vụ</h2></div><button id="closeDialog" type="button" class="icon">×</button></div><p class="dialog-note"><i class="fa-solid fa-link"></i> Chọn ngày → môn trong thời khóa biểu → tiết học.</p><p id="taskScheduleNote" class="dialog-warning hidden" role="alert"></p><div class="form-grid"><label>Ngày<input id="taskDate" type="date" required></label><label>Môn học<select id="taskSubject" required></select></label><label>Tiết học<select id="taskPeriod" required></select></label><label>Hạn nộp<input id="deadline" type="datetime-local" required></label><label class="points-field">Điểm<input id="taskPoints" type="number" min="0" max="100" value="10" required></label><label class="wide">Nhiệm vụ<textarea id="taskContent" rows="3" maxlength="500" placeholder="Ví dụ: Làm bài tập trang 25–27" required></textarea></label><label class="wide">Mô tả<textarea id="taskDescription" rows="2" maxlength="1000" placeholder="Ghi chú thêm (nếu có)"></textarea></label></div><div class="dialog-actions"><button id="cancelDialog" type="button" class="btn ghost">Hủy</button><button id="saveTaskBtn" class="btn primary" type="submit"><i class="fa-solid fa-check"></i> Lưu nhiệm vụ</button></div></form></dialog>
 <script type="module" src="./app.js"></script>
 </body>
 </html>
