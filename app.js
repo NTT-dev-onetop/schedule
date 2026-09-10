@@ -382,7 +382,8 @@ async function setActiveClass(nextId,save=true){
  tasksLoaded=false;tasks=[];users=[];scheduleDirty=false;notificationLastSnapshot="";scheduleRenderToken++;unsubscribeRealtime();
  const loader=$("#appLoader");if(loader){loader.style.display="grid";loader.classList.remove("fade-out");$(".app-loader-text")?.replaceChildren(document.createTextNode("Đang chuyển lớp..."));}
  prepareEveningScheduleView();fillSubjects();renderSchedule();subscribeRealtime();
- await Promise.all([loadUsers(),loadTasks(),taskSnapshotPromise]);hideAppLoader();toast(`Đã chuyển sang lớp ${id}`);
+ try{await Promise.all([loadUsers(),loadTasks()]);}finally{hideAppLoader();}
+ toast(`Đã chuyển sang lớp ${id}`);
 }
 
 function updateProfileUI(){
@@ -445,7 +446,7 @@ onAuthStateChanged(auth,async u=>{
   try{const userRef=doc(db,"users",u.uid),existing=await getDoc(userRef);if(!existing.exists())await setDoc(userRef,{uid:u.uid,email:u.email||"",displayName:u.displayName||u.email?.split("@")[0]||"Học sinh",className:"",classIds:[],activeClassId:"",points:0,weeklyPoints:0,tasksCompleted:0,streak:0,lastCompletedDate:"",createdAt:serverTimestamp()});
    await loadProfile();
    if(!myClassIds.length){updateClassSwitcher();openClassPicker();hideAppLoader();return;}
-   prepareEveningScheduleView();fillSubjects();renderSchedule();subscribeRealtime();await Promise.all([loadUsers(),loadTasks(),taskSnapshotPromise]);hideAppLoader();
+   try{prepareEveningScheduleView();fillSubjects();renderSchedule();subscribeRealtime();await Promise.all([loadUsers(),loadTasks()]);}finally{hideAppLoader();}
   }catch(e){console.error("App init failed",e);toast(`Không thể tải dữ liệu: ${errorMessage(e)}`);hideAppLoader();}
  }else{user=null;profile=null;classId="";myClassIds=[];tasks=[];users=[];tasksLoaded=false;notificationLastSnapshot="";if(notificationPanelOpen)closeNotifications();scheduleRenderToken++;unsubscribeRealtime();$("#auth").classList.remove("hidden");$("#app").classList.add("hidden");clearAuthError();hideAppLoader();}
 });
