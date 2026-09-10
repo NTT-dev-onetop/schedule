@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import { getAuth,onAuthStateChanged,GoogleAuthProvider,signInWithPopup,signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-import { getFirestore,doc,getDoc,setDoc,updateDoc,addDoc,collection,query,where,orderBy,getDocs,runTransaction,serverTimestamp,arrayUnion,arrayRemove,deleteDoc,onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { getFirestore,doc,getDoc,setDoc,updateDoc,addDoc,collection,query,orderBy,getDocs,runTransaction,serverTimestamp,arrayUnion,arrayRemove,deleteDoc,onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app),provider=new GoogleAuthProvider();
@@ -10,12 +10,12 @@ const PERIODS=[
  ["Chiều - Tiết 1","13:40","14:25","Chiều","1"],["Chiều - Tiết 2","14:25","15:10","Chiều","2"],["Chiều - Tiết 3","15:15","16:00","Chiều","3"],["Chiều - Tiết 4","16:00","16:45","Chiều","4"]
 ];
 const SUBJECTS=["Toán","Ngữ văn","Tiếng Anh","Vật lý","Hóa học","Sinh học","Lịch sử","Thể dục","GDQP","HDTN","KTPL"];
-const ALLOWED_CLASSES=["11A0","11T1"];
-let notificationTimer=null,notificationLastSnapshot="",notificationPanelOpen=false,taskDialogReturnFocus=null,lastDefaultDeadline="",lastCompletionUndo=null,tomorrowTaskFocusPending=false,appLoaderTimeout=null;
-let user=null,profile=null,classId="",myClassIds=[],weekStart=monday(new Date()),tasks=[],users=[],view="board",period="current",statusFilter="all",searchTimer=null,currentSchedule={},taskSchedule={},unsubs=[],scheduleUnsub=null,scheduleListenerKey=null,scheduleRenderToken=0,scheduleDirty=false,tasksLoaded=false,mobileDayIndex=Math.max(0,Math.min(5,new Date().getDay()-1));
+let notificationTimer=null,notificationLastSnapshot="",notificationPanelOpen=false,taskDialogReturnFocus=null,lastDefaultDeadline="",lastCompletionUndo=null,tomorrowTaskFocusPending=false,appLoaderTimeout=null,taskSnapshotResolve=null,taskSnapshotPromise=null;
+let user=null,profile=null,weekStart=monday(new Date()),tasks=[],users=[],view="board",period="current",statusFilter="all",searchTimer=null,currentSchedule={},taskSchedule={},unsubs=[],scheduleUnsub=null,scheduleListenerKey=null,scheduleRenderToken=0,scheduleDirty=false,tasksLoaded=false,mobileDayIndex=Math.max(0,Math.min(5,new Date().getDay()-1));
 
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 function hideAppLoader(){const el=$("#appLoader");if(!el)return;clearTimeout(appLoaderTimeout);el.classList.add("fade-out");setTimeout(()=>{el.style.display="none"},400)}
+appLoaderTimeout=setTimeout(hideAppLoader,8000);
 const iso=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");return `${y}-${m}-${day}`};
 function localDate(s){const [y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d)}
 function monday(d){const x=new Date(d);x.setHours(0,0,0,0);const n=x.getDay();x.setDate(x.getDate()+(n===0?-6:1-n));return x}
@@ -55,13 +55,9 @@ function subjectOptions(selected="",subjects=SUBJECTS){
  return list.map(s=>`<option value="${escape(s)}" ${s===selected?"selected":""}>${escape(s)}</option>`).join("");
 }
 
-function classScheduleRef(weekKey=iso(weekStart)){ if(!classId) throw new Error("Chưa chọn lớp."); return doc(db,"classes",classId,"schedules",weekKey); }
-function classTasksCollection(){ if(!classId) throw new Error("Chưa chọn lớp."); return collection(db,"classes",classId,"tasks"); }
-function sharedScheduleRef(){ return classScheduleRef(); }
-function sharedScheduleRefFor(date){ return classScheduleRef(weekKeyForDate(date)); }
+function sharedScheduleRef(){ return doc(db,"schedules",iso(weekStart)); }
+function sharedScheduleRefFor(date){ return doc(db,"schedules",weekKeyForDate(date)); }
 function scheduleForCurrentWeek(){ return currentSchedule||{}; }
-function normalizeClassId(v){return String(v||"").trim().replace(/\s+/g,"").toUpperCase().slice(0,30)}
-function classDisplayName(id){return id||"Chưa chọn lớp"}
 
 function subjectColor(subject=""){
  let h=0; for(const c of subject)h=(h*31+c.charCodeAt(0))%360;
@@ -110,7 +106,7 @@ function applyScheduleToUI(){
 function subscribeScheduleRealtime(expectedWeekKey=iso(weekStart),renderToken=scheduleRenderToken){
  unsubscribeScheduleRealtime();
  if(!user)return;
- const ref=classScheduleRef(expectedWeekKey);
+ const ref=doc(db,"schedules",expectedWeekKey);
  scheduleListenerKey=expectedWeekKey;
  let first=true,lastUpdatedAt=null;
  scheduleUnsub=onSnapshot(ref,snap=>{
@@ -166,7 +162,7 @@ async function saveSchedule(){
  }
  const uid=user.uid;
  const weekKey=iso(weekStart);
- const ref=classScheduleRef(weekKey);
+ const ref=doc(db,"schedules",weekKey);
  // Collect ALL 6 days in one pass. Mobile and desktop inputs are mirrored,
  // so changing any day/period is included in this single weekly write.
  const schedule=collectScheduleFromUI();
@@ -199,7 +195,7 @@ async function loadScheduleForCurrentWeek(){
  // Kept for compatibility with existing callers; realtime listener handles live updates.
  if(!user)return {};
  const weekKey=iso(weekStart);
- const s=await getDoc(classScheduleRef(weekKey));
+ const s=await getDoc(doc(db,"schedules",weekKey));
  if(iso(weekStart)!==weekKey)return currentSchedule;
  currentSchedule=s.exists()?(s.data().schedule||{}):{};
  applyScheduleToUI();
@@ -220,7 +216,7 @@ function scheduleSubjectsForDate(date){
 async function loadScheduleForDate(date){
  const key=weekKeyForDate(date);
  if(key===iso(weekStart))return currentSchedule;
- const s=await getDoc(classScheduleRef(key));
+ const s=await getDoc(doc(db,"schedules",key));
  return s.exists()?(s.data().schedule||{}):{};
 }
 async function syncTaskDropdown(){
@@ -246,36 +242,35 @@ function fillSubjects(){
 }
 async function loadUsers(){
  try{
-  if(!classId){users=[];return;}
-  const snap=await getDocs(query(collection(db,"users"),where("classIds","array-contains",classId)));
-  users=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.displayName||a.email||"").localeCompare(String(b.displayName||b.email||""),"vi"));
+  const snap=await getDocs(query(collection(db,"users"),orderBy("displayName")));
+  users=snap.docs.map(d=>({id:d.id,...d.data()}));
   $("#userFilter").innerHTML=`<option value="all">Tất cả người dùng</option>`+users.map(u=>`<option value="${escape(u.uid)}">${escape(u.displayName||u.email||"Học sinh")}</option>`).join("");
   syncQuickUserChips();
  }catch(e){console.warn(e);}
 }
 async function loadTasks(){
- const snap=await getDocs(query(classTasksCollection(),orderBy("date","asc")));
+ const snap=await getDocs(query(collection(db,"tasks"),orderBy("date","asc")));
  tasks=snap.docs.map(d=>({id:d.id,...d.data()}));
  tasksLoaded=true;
- 
+ taskSnapshotResolve?.();
  renderTasks();renderScheduleTaskDropdowns();updateTaskBadge();checkUpcomingNotifications(true);
 }
 function subscribeRealtime(){
  // One shared realtime lifecycle. Schedule is subscribed here once; week navigation replaces only its schedule listener.
  subscribeScheduleRealtime(iso(weekStart),scheduleRenderToken);
- unsubs.push(onSnapshot(query(classTasksCollection(),orderBy("date","asc")),snap=>{
-   console.log("[tasks] snapshot",classId,snap.size,snap.docs.length);
+ unsubs.push(onSnapshot(query(collection(db,"tasks"),orderBy("date","asc")),snap=>{
    tasks=snap.docs.map(d=>({id:d.id,...d.data()}));
    tasksLoaded=true;
-    renderTasks();renderScheduleTaskDropdowns();updateTaskBadge();checkUpcomingNotifications();
- },e=>{console.error("[tasks] error",classId,e.code,e.message);console.warn("task listener",e);tasksLoaded=true;renderTasks();toast(`Không thể đồng bộ nhiệm vụ: ${errorMessage(e)}`)}));
- unsubs.push(onSnapshot(query(collection(db,"users"),where("classIds","array-contains",classId)),snap=>{
-   users=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.displayName||a.email||"").localeCompare(String(b.displayName||b.email||""),"vi"));
+   taskSnapshotResolve?.();
+   renderTasks();renderScheduleTaskDropdowns();updateTaskBadge();checkUpcomingNotifications();
+ },e=>console.warn("task listener",e)));
+ unsubs.push(onSnapshot(query(collection(db,"users"),orderBy("displayName")),snap=>{
+   users=snap.docs.map(d=>({id:d.id,...d.data()}));
    $("#userFilter").innerHTML=`<option value="all">Tất cả người dùng</option>`+users.map(u=>`<option value="${escape(u.uid)}">${escape(u.displayName||u.email||"Học sinh")}</option>`).join("");
    if($( "#leaderboardTab").classList.contains("active"))leaderboard().catch(()=>{});
  },e=>console.warn("users listener",e)));
  unsubs.push(onSnapshot(doc(db,"users",user.uid),snap=>{
-   if(snap.exists()){ profile=snap.data(); myClassIds=Array.isArray(profile.classIds)?profile.classIds.map(normalizeClassId).filter(Boolean):myClassIds; updateClassSwitcher(); updateProfileUI(); }
+   if(snap.exists()){ profile=snap.data(); updateProfileUI(); }
  },e=>console.warn("profile listener",e)));
 }
 function unsubscribeRealtime(){
@@ -338,12 +333,12 @@ async function createTask(){
  const schedule=await loadScheduleForDate(date),day=dayFromDate(date);
  if(scheduleHasDayData(schedule,day)&&schedule[day]?.[p]!==subject)throw new Error("Môn học không khớp với thời khóa biểu chung của ngày/tiết này.");
  if(!deadline)throw new Error("Vui lòng chọn hạn nộp.");
- await addDoc(classTasksCollection(),{createdBy:user.uid,authorName:profile?.displayName||user.displayName||"Học sinh",subject,taskContent:content,date,dayOfWeek:day,period:p,startTime:row[1],endTime:row[2],deadline:new Date(deadline).toISOString(),description:$("#taskDescription").value.trim(),points,status:"pending",completedBy:[],completedAt:null,createdAt:serverTimestamp()});
+ await addDoc(collection(db,"tasks"),{createdBy:user.uid,authorName:profile?.displayName||user.displayName||"Học sinh",subject,taskContent:content,date,dayOfWeek:day,period:p,startTime:row[1],endTime:row[2],deadline:new Date(deadline).toISOString(),description:$("#taskDescription").value.trim(),points,status:"pending",completedBy:[],completedAt:null,createdAt:serverTimestamp()});
  closeTaskModal();$("#taskForm").reset();setTaskDefaults();toast("Đã tạo nhiệm vụ — mọi người sẽ thấy ngay");checkUpcomingNotifications(true);
 }
 async function completeTask(id){
  const meta=await runTransaction(db,async tx=>{
-  const ref=doc(db,"classes",classId,"tasks",id),snap=await tx.get(ref);if(!snap.exists())throw new Error("not-found");
+  const ref=doc(db,"tasks",id),snap=await tx.get(ref);if(!snap.exists())throw new Error("not-found");
   const t=snap.data(),completed=t.completedBy||[];if(completed.includes(user.uid))return null;
   const now=new Date(),deadline=new Date(t.deadline),onTime=now<=deadline,points=Number(t.points||0),uref=doc(db,"users",user.uid),us=await tx.get(uref),u=us.data()||{},today=iso(now),yesterday=iso(new Date(now.getTime()-86400000)),previousStreak=Number(u.streak||0),previousLast=u.lastCompletedDate||"";
   let streak=previousStreak;if(previousLast===today)streak=Math.max(1,previousStreak);else if(previousLast===yesterday)streak=previousStreak+1;else streak=1;
@@ -356,7 +351,7 @@ async function completeTask(id){
 async function undoCompleteTask(id){
  const meta=lastCompletionUndo?.id===id?lastCompletionUndo:null;if(!meta)throw new Error("Không còn thao tác để hoàn tác.");
  await runTransaction(db,async tx=>{
-  const ref=doc(db,"classes",classId,"tasks",id),snap=await tx.get(ref);if(!snap.exists())throw new Error("Nhiệm vụ không còn tồn tại.");
+  const ref=doc(db,"tasks",id),snap=await tx.get(ref);if(!snap.exists())throw new Error("Nhiệm vụ không còn tồn tại.");
   const t=snap.data(),completed=t.completedBy||[];if(!completed.includes(user.uid))return;
   const uref=doc(db,"users",user.uid),us=await tx.get(uref),u=us.data()||{},taskUpdate={completedBy:arrayRemove(user.uid),completedAt:null,status:"pending"},userUpdate={};
   if(meta.onTime){userUpdate.points=Math.max(0,Number(u.points||0)-meta.points);userUpdate.weeklyPoints=Math.max(0,Number(u.weeklyPoints||0)-meta.points);userUpdate.tasksCompleted=Math.max(0,Number(u.tasksCompleted||0)-1)}
@@ -365,44 +360,17 @@ async function undoCompleteTask(id){
  });
  lastCompletionUndo=null;await loadProfile();await loadTasks();toast("↩ Đã hoàn tác nhiệm vụ");
 }
-async function deleteTask(id){if(!confirm("Xóa nhiệm vụ này?"))return;await deleteDoc(doc(db,"classes",classId,"tasks",id));await loadTasks();toast("Đã xóa nhiệm vụ")}
-
-function updateClassSwitcher(){
- const wrap=$("#classSwitcher"),name=$("#activeClassName"),menu=$("#classMenu"); if(!wrap||!menu)return;
- wrap.classList.toggle("hidden",!user||!myClassIds.length); if(name)name.textContent=classDisplayName(classId);
- menu.innerHTML=myClassIds.map(id=>`<button type="button" class="class-menu-item ${id===classId?"active":""}" data-class-id="${escape(id)}"><i class="fa-solid fa-school"></i><span>${escape(id)}</span>${id===classId?`<i class="fa-solid fa-check"></i>`:""}</button>`).join("")+(myClassIds.length<ALLOWED_CLASSES.length?`<button type="button" class="class-menu-add" data-add-class="1"><i class="fa-solid fa-plus"></i> Tham gia lớp khác</button>`:"");
-}
-function openClassPicker(){const el=$("#classPicker");if(!el)return;el.classList.remove("hidden");document.body.classList.add("modal-open");setTimeout(()=>$("[data-class-pick]")?.focus(),0)}
-function closeClassPicker(){const el=$("#classPicker");if(!el)return;el.classList.add("hidden");document.body.classList.remove("modal-open")}
-async function addClassMembership(raw){const id=normalizeClassId(raw);if(!id)throw new Error("Chưa chọn lớp.");if(!ALLOWED_CLASSES.includes(id))throw new Error("Lớp này không tồn tại. Chỉ có 11A0 và 11T1.");if(myClassIds.includes(id)){await setActiveClass(id);return;} const next=[...myClassIds,id];await updateDoc(doc(db,"users",user.uid),{classIds:next,activeClassId:id});myClassIds=next;profile={...profile,classIds:next,activeClassId:id};closeClassPicker();await setActiveClass(id,false);toast(`✓ Đã tham gia lớp ${id}`);}
-async function setActiveClass(nextId,save=true){
- const id=normalizeClassId(nextId); if(!id||!myClassIds.includes(id)||id===classId)return;
- if(save)await updateDoc(doc(db,"users",user.uid),{activeClassId:id});
- classId=id;profile={...profile,activeClassId:id};updateClassSwitcher();closeClassPicker();
- tasksLoaded=false;tasks=[];users=[];scheduleDirty=false;notificationLastSnapshot="";scheduleRenderToken++;unsubscribeRealtime();
- const loader=$("#appLoader");if(loader){loader.style.display="grid";loader.classList.remove("fade-out");const loaderText=$(".app-loader-text");if(loaderText)loaderText.textContent="Đang chuyển lớp...";}
- prepareEveningScheduleView();fillSubjects();renderSchedule();subscribeRealtime();
- try{await Promise.all([loadUsers(),loadTasks()]);}finally{hideAppLoader();}
- toast(`Đã chuyển sang lớp ${id}`);
-}
+async function deleteTask(id){if(!confirm("Xóa nhiệm vụ này?"))return;await deleteDoc(doc(db,"tasks",id));await loadTasks();toast("Đã xóa nhiệm vụ")}
 
 function updateProfileUI(){
  $("#headerName").textContent=profile?.displayName||"Học sinh";$("#profileName").textContent=profile?.displayName||"Học sinh";$("#profileEmail").textContent=profile?.email||user?.email||"";$("#avatar").textContent=initials(profile?.displayName||"HS");
- $("#profileDisplay").value=profile?.displayName||"";$("#profileClass").value=classId||profile?.className||"";$("#points").textContent=profile?.points||0;$("#weekly").textContent=profile?.weeklyPoints||0;$("#completed").textContent=profile?.tasksCompleted||0;$("#streak").textContent=profile?.streak||0;
+ $("#profileDisplay").value=profile?.displayName||"";$("#profileClass").value=profile?.className||"";$("#points").textContent=profile?.points||0;$("#weekly").textContent=profile?.weeklyPoints||0;$("#completed").textContent=profile?.tasksCompleted||0;$("#streak").textContent=profile?.streak||0;
 }
 async function loadProfile(){
- const s=await getDoc(doc(db,"users",user.uid));profile=s.data()||{displayName:user.email?.split("@")[0]||"Học sinh",className:"",classIds:[],activeClassId:"",points:0,weeklyPoints:0,tasksCompleted:0,streak:0,lastCompletedDate:""};myClassIds=Array.isArray(profile.classIds)?profile.classIds.map(normalizeClassId).filter(Boolean):[];classId=normalizeClassId(profile.activeClassId)||myClassIds[0]||"";if(classId&&!myClassIds.includes(classId))myClassIds.unshift(classId);updateProfileUI();updateClassSwitcher();
+ const s=await getDoc(doc(db,"users",user.uid));profile=s.data()||{displayName:user.email?.split("@")[0]||"Học sinh",className:"",points:0,weeklyPoints:0,tasksCompleted:0,streak:0,lastCompletedDate:""};updateProfileUI();
 }
-async function saveProfile(){const name=$("#profileDisplay").value.trim(),cls=$("#profileClass").value.trim();await updateDoc(doc(db,"users",user.uid),{displayName:name,className:classId||cls});await loadProfile();await loadUsers();toast("Đã cập nhật hồ sơ")}
-function classMemberUsers(){return users.slice();}
-async function leaderboard(){
- if(!classId){$("#ranking").innerHTML=`<div class="empty"><strong>Chưa chọn lớp</strong><span>Hãy chọn một lớp để xem xếp hạng.</span></div>`;return;}
- const snap=await getDocs(query(classTasksCollection(),orderBy("date","desc")));
- const startDate=monday(new Date()),endDate=new Date(startDate.getTime()+6*86400000),startKey=iso(startDate),endKey=iso(endDate),members=new Map(classMemberUsers().map(u=>[u.uid,u])),stats=new Map();
- snap.docs.forEach(d=>{const t={id:d.id,...d.data()};if(t.date<startKey||t.date>endKey)return;for(const uid of (t.completedBy||[])){const m=members.get(uid);if(!m)continue;const x=stats.get(uid)||{user:m,points:0,count:0};x.points+=Number(t.points||0);x.count++;stats.set(uid,x);}});
- const top=[...stats.values()].sort((a,b)=>b.points-a.points||b.count-a.count||String(a.user.displayName||"").localeCompare(String(b.user.displayName||""),"vi")).slice(0,10);
- $("#ranking").innerHTML=top.length?top.map((x,i)=>`<div class="rank"><strong>#${i+1}</strong><span>${escape(x.user.displayName||"Học sinh")} <small class="muted">${escape(classId)}</small></span><span>${x.count} nhiệm vụ</span><strong>${x.points} điểm</strong></div>`).join(""):`<div class="empty"><i class="fa-regular fa-chart-bar"></i><strong>Chưa có dữ liệu xếp hạng</strong><span>Lớp ${escape(classId)} chưa có nhiệm vụ hoàn thành trong tuần này.</span></div>`;
-}
+async function saveProfile(){const name=$("#profileDisplay").value.trim(),cls=$("#profileClass").value.trim();await updateDoc(doc(db,"users",user.uid),{displayName:name,className:cls});await loadProfile();await loadUsers();toast("Đã cập nhật hồ sơ")}
+async function leaderboard(){const snap=await getDocs(query(collection(db,"users"),orderBy("weeklyPoints","desc"))),top=snap.docs.map(d=>d.data()).slice(0,10);$("#ranking").innerHTML=top.length?top.map((u,i)=>`<div class="rank"><strong>#${i+1}</strong><span>${escape(u.displayName||"Học sinh")} <small class="muted">${escape(u.className||"")}</small></span><span>${u.tasksCompleted||0} nhiệm vụ</span><strong>${u.weeklyPoints||0} điểm</strong></div>`).join(""):`<div class="empty"><i class="fa-regular fa-chart-bar"></i><strong>Chưa có dữ liệu xếp hạng</strong><span>Hãy hoàn thành nhiệm vụ để bắt đầu.</span></div>`}
 function setTaskDefaults(){const d=iso(new Date());lastDefaultDeadline=defaultDeadlineForDate(d);$("#taskDate").value=d;$("#deadline").value=lastDefaultDeadline;syncTaskDropdown().catch(()=>{});$("#taskPoints").value=10}
 function switchTab(name){const current=$(".nav.active")?.dataset.tab;if(current!==name&&scheduleDirty&&!confirm("Bạn có thay đổi chưa lưu. Tiếp tục?"))return false;$$('.nav').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));$$('.tab').forEach(s=>s.classList.toggle('active',s.id===name+'Tab'));if(name==='leaderboard')leaderboard().catch(e=>toast(errorMessage(e)));return true}
 
@@ -442,24 +410,27 @@ $("#mobileDaySelector")?.addEventListener("click",e=>{const b=e.target.closest("
 window.addEventListener("online",updateOnlineStatus);window.addEventListener("offline",updateOnlineStatus);updateOnlineStatus();notificationTimer=setInterval(()=>checkUpcomingNotifications(),60000);
 
 onAuthStateChanged(auth,async u=>{
+ user=u;
  if(u){
-  clearTimeout(appLoaderTimeout);
-  appLoaderTimeout=setTimeout(hideAppLoader,8000);
-  user=u;tasksLoaded=false;tasks=[];users=[];scheduleDirty=false;clearAuthError();$("#auth").classList.add("hidden");$("#app").classList.remove("hidden");
-  try{const userRef=doc(db,"users",u.uid),existing=await getDoc(userRef);if(!existing.exists())await setDoc(userRef,{uid:u.uid,email:u.email||"",displayName:u.displayName||u.email?.split("@")[0]||"Học sinh",className:"",classIds:[],activeClassId:"",points:0,weeklyPoints:0,tasksCompleted:0,streak:0,lastCompletedDate:"",createdAt:serverTimestamp()});
+  tasksLoaded=false;
+  taskSnapshotPromise=new Promise(resolve=>{taskSnapshotResolve=resolve});
+  scheduleDirty=false;clearAuthError();$("#auth").classList.add('hidden');$("#app").classList.remove('hidden');$("#headerName").textContent=u.displayName||u.email||"";
+  try{
+   const userRef=doc(db,"users",u.uid),existing=await getDoc(userRef);
+   if(!existing.exists())await setDoc(userRef,{uid:u.uid,email:u.email||"",displayName:u.displayName||u.email?.split('@')[0]||"Học sinh",className:"",points:0,weeklyPoints:0,tasksCompleted:0,streak:0,lastCompletedDate:"",createdAt:serverTimestamp()});
    await loadProfile();
-   if(!myClassIds.length){updateClassSwitcher();openClassPicker();hideAppLoader();return;}
-   try{prepareEveningScheduleView();fillSubjects();renderSchedule();subscribeRealtime();await Promise.all([loadUsers(),loadTasks()]);}finally{hideAppLoader();}
-  }catch(e){console.error("App init failed",e);toast(`Không thể tải dữ liệu: ${errorMessage(e)}`);hideAppLoader();}
- }else{clearTimeout(appLoaderTimeout);appLoaderTimeout=null;user=null;profile=null;classId="";myClassIds=[];tasks=[];users=[];tasksLoaded=false;notificationLastSnapshot="";if(notificationPanelOpen)closeNotifications();scheduleRenderToken++;unsubscribeRealtime();$("#auth").classList.remove("hidden");$("#app").classList.add("hidden");clearAuthError();hideAppLoader();}
+   fillSubjects();
+   await syncTaskDropdown().catch(()=>{});
+   prepareEveningScheduleView();
+   tomorrowTaskFocusPending=new Date().getHours()>=18;
+   renderSchedule();
+   subscribeRealtime();
+   await Promise.all([loadUsers(),loadTasks(),taskSnapshotPromise]);
+   hideAppLoader();
+  }catch(e){console.error("Firebase init error:",e);toast(errorMessage(e));hideAppLoader()}
+ }else{
+  tasksLoaded=false;tasks=[];users=[];profile=null;taskSnapshotResolve=null;taskSnapshotPromise=null;
+  scheduleDirty=false;notificationLastSnapshot="";if(notificationPanelOpen)closeNotifications();scheduleRenderToken++;unsubscribeRealtime();$("#auth").classList.remove('hidden');$("#app").classList.add('hidden');clearAuthError();
+  setTimeout(hideAppLoader,300);
+ }
 });
-
-$("#classSwitcherBtn")?.addEventListener("click",()=>$("#classMenu")?.classList.toggle("hidden"));
-$("#classMenu")?.addEventListener("click",e=>{const item=e.target.closest("[data-class-id]");if(item)setActiveClass(item.dataset.classId).catch(x=>toast(errorMessage(x)));if(e.target.closest("[data-add-class]")){$("#classMenu").classList.add("hidden");openClassPicker()}});
-$("#closeClassPicker")?.addEventListener("click",closeClassPicker);$("#cancelClassPicker")?.addEventListener("click",closeClassPicker);
-$("#classPicker")?.addEventListener("click",e=>{
- const btn=e.target.closest("[data-class-pick]");
- if(btn){addClassMembership(btn.dataset.classPick).then(()=>toast(`✓ Đã vào lớp ${btn.dataset.classPick}`)).catch(x=>toast(errorMessage(x)));return;}
- if(e.target.id==="classPicker")closeClassPicker();
-});
-document.addEventListener("click",e=>{if(!e.target.closest("#classSwitcher"))$("#classMenu")?.classList.add("hidden")});
