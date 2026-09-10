@@ -10,10 +10,12 @@ const PERIODS=[
  ["Chiều - Tiết 1","13:40","14:25","Chiều","1"],["Chiều - Tiết 2","14:25","15:10","Chiều","2"],["Chiều - Tiết 3","15:15","16:00","Chiều","3"],["Chiều - Tiết 4","16:00","16:45","Chiều","4"]
 ];
 const SUBJECTS=["Toán","Ngữ văn","Tiếng Anh","Vật lý","Hóa học","Sinh học","Lịch sử","Thể dục","GDQP","HDTN","KTPL"];
-let notificationTimer=null,notificationLastSnapshot="",notificationPanelOpen=false,taskDialogReturnFocus=null,lastDefaultDeadline="",lastCompletionUndo=null,tomorrowTaskFocusPending=false;
-let user=null,profile=null,weekStart=monday(new Date()),tasks=[],users=[],view="board",period="current",statusFilter="all",searchTimer=null,currentSchedule={},taskSchedule={},unsubs=[],scheduleUnsub=null,scheduleListenerKey=null,scheduleRenderToken=0,scheduleDirty=false,mobileDayIndex=Math.max(0,Math.min(5,new Date().getDay()-1));
+let notificationTimer=null,notificationLastSnapshot="",notificationPanelOpen=false,taskDialogReturnFocus=null,lastDefaultDeadline="",lastCompletionUndo=null,tomorrowTaskFocusPending=false,appLoaderTimeout=null,taskSnapshotResolve=null,taskSnapshotPromise=null;
+let user=null,profile=null,weekStart=monday(new Date()),tasks=[],users=[],view="board",period="current",statusFilter="all",searchTimer=null,currentSchedule={},taskSchedule={},unsubs=[],scheduleUnsub=null,scheduleListenerKey=null,scheduleRenderToken=0,scheduleDirty=false,tasksLoaded=false,mobileDayIndex=Math.max(0,Math.min(5,new Date().getDay()-1));
 
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+function hideAppLoader(){const el=$("#appLoader");if(!el)return;clearTimeout(appLoaderTimeout);el.classList.add("fade-out");setTimeout(()=>{el.style.display="none"},400)}
+appLoaderTimeout=setTimeout(hideAppLoader,8000);
 const iso=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");return `${y}-${m}-${day}`};
 function localDate(s){const [y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d)}
 function monday(d){const x=new Date(d);x.setHours(0,0,0,0);const n=x.getDay();x.setDate(x.getDate()+(n===0?-6:1-n));return x}
@@ -93,7 +95,6 @@ function renderSchedule(){
  const head=`<thead><tr><th rowspan="2" class="day-col">Thứ</th><th colspan="5" class="session morning">☀️ Sáng</th><th colspan="4" class="session afternoon">🌙 Chiều</th></tr><tr>${PERIODS.map(p=>`<th class="period-head ${p[3]==="Sáng"?"morning":"afternoon"}">Tiết ${p[4]}<small>${p[1]}–${p[2]}</small></th>`).join("")}</tr></thead>`;
  const body=`<tbody>${DAYS.map((d,di)=>{const date=iso(new Date(weekStart.getTime()+di*86400000)),todayClass=!isSunday&&date===todayKey?" today-col":isSunday&&date===tomorrowKey?" tomorrow-col":"",tomorrowClass=!isSunday&&date===tomorrowKey?" tomorrow-col":"";return `<tr><th class="day-name${todayClass}${tomorrowClass}">${d}<small>${new Date(weekStart.getTime()+di*86400000).toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit"})}</small></th>${PERIODS.map(p=>`<td class="schedule-cell${todayClass}${tomorrowClass}" data-date="${date}" data-day="${d}" data-period="${p[0]}">${scheduleSelect(date,d,p)}<select class="schedule-task-select" data-task-date="${date}" data-task-period="${p[0]}" aria-label="Nhiệm vụ ${d} ${p[0]}"><option value="">📋 Nhiệm vụ</option></select></td>`).join("")}</tr>`}).join("")}</tbody>`;
  $("#scheduleTable").innerHTML=head+body; applyScheduleToUI();
- if(user)subscribeScheduleRealtime(weekKey,renderToken);
 }
 
 function applyScheduleToUI(){
@@ -237,7 +238,7 @@ function syncTaskPeriods(scheduleOverride=null){
 
 function fillSubjects(){
  $("#subjectFilter").innerHTML=`<option value="all">Tất cả môn</option>`+SUBJECTS.map(s=>`<option value="${escape(s)}">${escape(s)}</option>`).join("");
- syncTaskDropdown().catch(()=>{});
+ return syncTaskDropdown();
 }
 async function loadUsers(){
  try{
@@ -249,13 +250,18 @@ async function loadUsers(){
 }
 async function loadTasks(){
  const snap=await getDocs(query(collection(db,"tasks"),orderBy("date","asc")));
- tasks=snap.docs.map(d=>({id:d.id,...d.data()}));renderTasks();renderScheduleTaskDropdowns();updateTaskBadge();checkUpcomingNotifications(true);
+ tasks=snap.docs.map(d=>({id:d.id,...d.data()}));
+ tasksLoaded=true;
+ taskSnapshotResolve?.();
+ renderTasks();renderScheduleTaskDropdowns();updateTaskBadge();checkUpcomingNotifications(true);
 }
 function subscribeRealtime(){
- // Schedule has its own lifecycle because week navigation replaces its document listener.
+ // One shared realtime lifecycle. Schedule is subscribed here once; week navigation replaces only its schedule listener.
  subscribeScheduleRealtime(iso(weekStart),scheduleRenderToken);
  unsubs.push(onSnapshot(query(collection(db,"tasks"),orderBy("date","asc")),snap=>{
    tasks=snap.docs.map(d=>({id:d.id,...d.data()}));
+   tasksLoaded=true;
+   taskSnapshotResolve?.();
    renderTasks();renderScheduleTaskDropdowns();updateTaskBadge();checkUpcomingNotifications();
  },e=>console.warn("task listener",e)));
  unsubs.push(onSnapshot(query(collection(db,"users"),orderBy("displayName")),snap=>{
@@ -289,6 +295,10 @@ function filteredTasks(){
 }
 function renderTasks(){
  updateTaskBadge();
+ if(!tasksLoaded){
+  if(period==="current"){$("#taskArea").innerHTML=`<div class="task-loading" aria-live="polite" aria-label="Đang tải nhiệm vụ">${Array.from({length:4},()=>`<div class="task-skeleton"></div>`).join("")}</div>`;return}
+  $("#taskArea").innerHTML=`<div class="task-loading" aria-live="polite" aria-label="Đang tải nhiệm vụ">${Array.from({length:3},()=>`<div class="task-skeleton"></div>`).join("")}</div>`;return
+ }
  const list=filteredTasks();
  const focusTomorrow=tomorrowTaskFocusPending;
  const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);const tomorrowKey=iso(tomorrow),hasTomorrow=list.some(t=>t.date===tomorrowKey);
@@ -372,7 +382,7 @@ $("#closeNotifications")?.addEventListener("click",closeNotifications);
 $("#enableDesktopNotifications")?.addEventListener("click",()=>enableDesktopNotifications().catch(e=>toast(errorMessage(e))));
 $("#notificationList")?.addEventListener("click",e=>{const b=e.target.closest("[data-notification-task]");if(!b)return;const t=tasks.find(x=>x.id===b.dataset.notificationTask);if(t){closeNotifications();if(!switchTab("tasks"))return;setTimeout(()=>{const card=document.querySelector(`[data-task-card="${CSS.escape(t.id)}"]`);if(!card)return;if((t.completedBy||[]).includes(user.uid)){card.classList.add("pulse-highlight");setTimeout(()=>card.classList.remove("pulse-highlight"),2000)}else card.scrollIntoView({behavior:"smooth",block:"center"})},80)}});
 document.addEventListener("click",e=>{if(notificationPanelOpen&&!e.target.closest("#notificationPanel,#notificationBtn"))closeNotifications()});
-function changeWeek(action){if(scheduleDirty&&!confirm("Bạn có thay đổi chưa lưu. Tiếp tục?"))return;action();scheduleDirty=false;renderSchedule()}
+function changeWeek(action){if(scheduleDirty&&!confirm("Bạn có thay đổi chưa lưu. Tiếp tục?"))return;action();scheduleDirty=false;renderSchedule();if(user)subscribeScheduleRealtime(iso(weekStart),scheduleRenderToken)}
 $("#prevWeek").onclick=()=>changeWeek(()=>weekStart.setDate(weekStart.getDate()-7));
 $("#nextWeek").onclick=()=>changeWeek(()=>weekStart.setDate(weekStart.getDate()+7));
 $("#thisWeek").onclick=()=>changeWeek(()=>weekStart=monday(new Date()));
@@ -402,7 +412,25 @@ window.addEventListener("online",updateOnlineStatus);window.addEventListener("of
 onAuthStateChanged(auth,async u=>{
  user=u;
  if(u){
+  tasksLoaded=false;
+  taskSnapshotPromise=new Promise(resolve=>{taskSnapshotResolve=resolve});
   scheduleDirty=false;clearAuthError();$("#auth").classList.add('hidden');$("#app").classList.remove('hidden');$("#headerName").textContent=u.displayName||u.email||"";
-  try{const userRef=doc(db,"users",u.uid),existing=await getDoc(userRef);if(!existing.exists())await setDoc(userRef,{uid:u.uid,email:u.email||"",displayName:u.displayName||u.email?.split('@')[0]||"Học sinh",className:"",points:0,weeklyPoints:0,tasksCompleted:0,streak:0,lastCompletedDate:"",createdAt:serverTimestamp()});await loadProfile();fillSubjects();prepareEveningScheduleView();tomorrowTaskFocusPending=new Date().getHours()>=18;renderSchedule();await loadUsers();await loadTasks();subscribeRealtime()}catch(e){console.error("Firebase init error:",e);toast(errorMessage(e))}
- }else{scheduleDirty=false;notificationLastSnapshot="";if(notificationPanelOpen)closeNotifications();scheduleRenderToken++;unsubscribeRealtime();$("#auth").classList.remove('hidden');$("#app").classList.add('hidden');clearAuthError()}
+  try{
+   const userRef=doc(db,"users",u.uid),existing=await getDoc(userRef);
+   if(!existing.exists())await setDoc(userRef,{uid:u.uid,email:u.email||"",displayName:u.displayName||u.email?.split('@')[0]||"Học sinh",className:"",points:0,weeklyPoints:0,tasksCompleted:0,streak:0,lastCompletedDate:"",createdAt:serverTimestamp()});
+   await loadProfile();
+   fillSubjects();
+   await syncTaskDropdown().catch(()=>{});
+   prepareEveningScheduleView();
+   tomorrowTaskFocusPending=new Date().getHours()>=18;
+   renderSchedule();
+   subscribeRealtime();
+   await Promise.all([loadUsers(),loadTasks(),taskSnapshotPromise]);
+   hideAppLoader();
+  }catch(e){console.error("Firebase init error:",e);toast(errorMessage(e));hideAppLoader()}
+ }else{
+  tasksLoaded=false;tasks=[];users=[];profile=null;taskSnapshotResolve=null;taskSnapshotPromise=null;
+  scheduleDirty=false;notificationLastSnapshot="";if(notificationPanelOpen)closeNotifications();scheduleRenderToken++;unsubscribeRealtime();$("#auth").classList.remove('hidden');$("#app").classList.add('hidden');clearAuthError();
+  setTimeout(hideAppLoader,300);
+ }
 });

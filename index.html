@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
+<div id="appLoader" class="app-loader" role="status" aria-live="polite"><div class="app-loader-card"><div class="app-loader-logo">🎓 <span>SchoolTask</span></div><div class="app-loader-spinner" aria-hidden="true"></div><div class="app-loader-text">Đang tải dữ liệu...</div></div></div>
 <div id="toast" class="toast" aria-live="polite"></div>
 <div id="notificationPanel" class="notification-panel" aria-hidden="true">
   <div class="notification-head"><div><strong>🔔 Thông báo</strong><small id="notificationSummary">Nhiệm vụ sắp tới</small></div><button id="closeNotifications" class="icon" type="button" aria-label="Đóng">×</button></div>
@@ -43,7 +44,7 @@
 </aside>
 <main class="container">
 <section id="scheduleTab" class="tab">
-  <div class="head schedule-head"><div><span class="eyebrow"><i class="fa-regular fa-calendar"></i> THỜI KHÓA BIỂU CHUNG</span><h1>Thời khóa biểu</h1><p id="weekText" class="muted"></p></div><div class="actions"><button id="prevWeek" class="icon-btn" title="Tuần trước" aria-label="Tuần trước">‹</button><button id="thisWeek" class="btn ghost" aria-label="Về tuần hiện tại">Hôm nay</button><button id="nextWeek" class="icon-btn" title="Tuần sau" aria-label="Tuần sau">›</button><button id="saveSchedule" class="btn primary"><i class="fa-solid fa-floppy-disk"></i> Lưu TKB</button></div></div>
+  <div class="head schedule-head"><div><span class="eyebrow"><i class="fa-regular fa-calendar"></i> THỜI KHÓA BIỂU CHUNG</span><h1>Thời khóa biểu</h1><p id="weekText" class="muted"></p></div><div class="actions"><button id="prevWeek" class="icon-btn" title="Tuần trước" aria-label="Tuần trước">‹</button><button id="thisWeek" class="btn ghost" aria-label="Về tuần hiện tại">Tuần này</button><button id="nextWeek" class="icon-btn" title="Tuần sau" aria-label="Tuần sau">›</button><button id="saveSchedule" class="btn primary"><i class="fa-solid fa-floppy-disk"></i> Lưu TKB</button></div></div>
   <div class="schedule-meta"><div><span class="live-dot"></span><strong>TKB dùng chung</strong><span>Thay đổi sẽ cập nhật cho người khác ngay.</span></div><div id="saveHint">Chọn môn trực tiếp trên lịch</div></div>
   <div id="mobileDaySelector" class="day-selector" aria-label="Chọn ngày"></div>
   <div class="card schedule-card"><div class="table-scroll desktop-schedule"><table id="scheduleTable"></table></div><div id="mobileSchedule" class="mobile-schedule"></div><div class="schedule-hint"><span><i class="fa-solid fa-circle-check"></i> Mỗi ô là một môn học</span><span><i class="fa-solid fa-bolt"></i> Đồng bộ realtime</span></div></div>
