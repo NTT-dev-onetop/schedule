@@ -10,7 +10,7 @@ const PERIODS=[
  ["Chiều - Tiết 1","13:40","14:25","Chiều","1"],["Chiều - Tiết 2","14:25","15:10","Chiều","2"],["Chiều - Tiết 3","15:15","16:00","Chiều","3"],["Chiều - Tiết 4","16:00","16:45","Chiều","4"]
 ];
 const SUBJECTS=["Toán","Ngữ văn","Tiếng Anh","Vật lý","Hóa học","Sinh học","Lịch sử","Thể dục","GDQP","HDTN","KTPL"];
-let notificationTimer=null,notificationLastSnapshot="",notificationPanelOpen=false,taskDialogReturnFocus=null,lastDefaultDeadline="",lastCompletionUndo=null;
+let notificationTimer=null,notificationLastSnapshot="",notificationPanelOpen=false,taskDialogReturnFocus=null,lastDefaultDeadline="",lastCompletionUndo=null,tomorrowTaskFocusPending=false;
 let user=null,profile=null,weekStart=monday(new Date()),tasks=[],users=[],view="board",period="current",statusFilter="all",searchTimer=null,currentSchedule={},taskSchedule={},unsubs=[],scheduleUnsub=null,scheduleListenerKey=null,scheduleRenderToken=0,scheduleDirty=false,mobileDayIndex=Math.max(0,Math.min(5,new Date().getDay()-1));
 
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
@@ -83,13 +83,15 @@ function renderMobileSchedule(){
  area.innerHTML=`<div class="mobile-day-title"><div><span>${day}</span><strong>${localDate(date).toLocaleDateString("vi-VN",{weekday:"long",day:"2-digit",month:"2-digit"})}</strong></div><span>${Object.values(row).filter(Boolean).length}/9 tiết có môn</span></div>`+
  PERIODS.map(p=>{const subject=row[p[0]]||"";return `<article class="period-card ${p[3]==="Sáng"?"morning":"afternoon"}" style="--subject-color:${subjectColor(subject)}"><div class="period-number"><span>${p[3]==="Sáng"?"☀️":"🌙"}</span><b>Tiết ${p[4]}</b><small>${p[1]}–${p[2]}</small></div><div class="period-subject">${scheduleSelect(date,day,p)}</div><div class="period-task"><select class="schedule-task-select" data-task-date="${date}" data-task-period="${escape(p[0])}" aria-label="Nhiệm vụ ${escape(day)} ${escape(p[0])}"><option value="">📋 Nhiệm vụ</option></select></div></article>`}).join("");
 }
+function prepareEveningScheduleView(){const h=new Date().getHours();if(h<18)return;const n=new Date();n.setDate(n.getDate()+1);const dow=n.getDay();if(dow===0||dow===6){weekStart=monday(n);mobileDayIndex=0}else{weekStart=monday(n);mobileDayIndex=dow-1}}
 function renderSchedule(){
  const weekKey=iso(weekStart),renderToken=++scheduleRenderToken;
  unsubscribeScheduleRealtime(); currentSchedule={};
  const end=new Date(weekStart.getTime()+6*86400000);
  $("#weekText").textContent=`${weekStart.toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit"})} – ${end.toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit",year:"numeric"})}`;
+ const now=new Date(),todayKey=iso(now),tomorrowDate=new Date(now);tomorrowDate.setDate(tomorrowDate.getDate()+1);const tomorrowKey=iso(tomorrowDate),isSunday=now.getDay()===0;
  const head=`<thead><tr><th rowspan="2" class="day-col">Thứ</th><th colspan="5" class="session morning">☀️ Sáng</th><th colspan="4" class="session afternoon">🌙 Chiều</th></tr><tr>${PERIODS.map(p=>`<th class="period-head ${p[3]==="Sáng"?"morning":"afternoon"}">Tiết ${p[4]}<small>${p[1]}–${p[2]}</small></th>`).join("")}</tr></thead>`;
- const body=`<tbody>${DAYS.map((d,di)=>`<tr><th class="day-name">${d}<small>${new Date(weekStart.getTime()+di*86400000).toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit"})}</small></th>${PERIODS.map(p=>{const date=iso(new Date(weekStart.getTime()+di*86400000));return `<td class="schedule-cell" data-date="${date}" data-day="${d}" data-period="${p[0]}">${scheduleSelect(date,d,p)}<select class="schedule-task-select" data-task-date="${date}" data-task-period="${p[0]}" aria-label="Nhiệm vụ ${d} ${p[0]}"><option value="">📋 Nhiệm vụ</option></select></td>`}).join("")}</tr>`).join("")}</tbody>`;
+ const body=`<tbody>${DAYS.map((d,di)=>{const date=iso(new Date(weekStart.getTime()+di*86400000)),todayClass=!isSunday&&date===todayKey?" today-col":isSunday&&date===tomorrowKey?" tomorrow-col":"",tomorrowClass=!isSunday&&date===tomorrowKey?" tomorrow-col":"";return `<tr><th class="day-name${todayClass}${tomorrowClass}">${d}<small>${new Date(weekStart.getTime()+di*86400000).toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit"})}</small></th>${PERIODS.map(p=>`<td class="schedule-cell${todayClass}${tomorrowClass}" data-date="${date}" data-day="${d}" data-period="${p[0]}">${scheduleSelect(date,d,p)}<select class="schedule-task-select" data-task-date="${date}" data-task-period="${p[0]}" aria-label="Nhiệm vụ ${d} ${p[0]}"><option value="">📋 Nhiệm vụ</option></select></td>`).join("")}</tr>`}).join("")}</tbody>`;
  $("#scheduleTable").innerHTML=head+body; applyScheduleToUI();
  if(user)subscribeScheduleRealtime(weekKey,renderToken);
 }
@@ -270,23 +272,44 @@ function unsubscribeRealtime(){
  unsubs.forEach(fn=>{try{fn()}catch{}});
  unsubs=[];
 }
+function createdAtMillis(t){const v=t?.createdAt;return v?.toMillis?.()??(v?.seconds?Number(v.seconds)*1000:Number(v)||0)}
+function isPeriodEnded(t){const row=periodByKey(t?.period);if(!t?.date||!row)return false;const d=localDate(t.date),[h,m]=String(row[2]||"23:59").split(":").map(Number);d.setHours(h||0,m||0,0,0);return Date.now()>d.getTime()}
 function filteredTasks(){
  const today=iso(new Date()),now=Date.now(),uf=$("#userFilter").value,sf=$("#subjectFilter").value,q=$("#search").value.trim().toLowerCase();
  return tasks.filter(t=>{
-  const done=(t.completedBy||[]).includes(user.uid),overdue=!done&&taskDeadlineDate(t).getTime()<now;
-  const periodMatch=period==="current"?t.date>=today:done&&t.date<today;
-  const statusMatch=statusFilter==="all"?true:statusFilter==="minePending"?!done&&t.date>=today:statusFilter==="overdue"?overdue:done;
-  return (statusFilter==="overdue"?overdue:periodMatch)&&statusMatch&&(uf==="all"||t.createdBy===uf)&&(sf==="all"||t.subject===sf)&&(!q||`${t.subject} ${t.taskContent} ${t.description||""}`.toLowerCase().includes(q));
- }).sort((a,b)=>a.date.localeCompare(b.date)||PERIODS.findIndex(p=>p[0]===a.period)-PERIODS.findIndex(p=>p[0]===b.period));
+  const done=(t.completedBy||[]).includes(user.uid),periodEnded=isPeriodEnded(t),overdue=!done&&periodEnded;
+  const periodMatch=period==="current"?!done&&!periodEnded:done;
+  const statusMatch=statusFilter==="all"?true:statusFilter==="minePending"?!done&&!periodEnded&&t.date>=today:statusFilter==="overdue"?overdue:done;
+  const periodStatusMatch=statusFilter==="overdue"?overdue:periodMatch;
+  return periodStatusMatch&&statusMatch&&(uf==="all"||t.createdBy===uf)&&(sf==="all"||t.subject===sf)&&(!q||`${t.subject} ${t.taskContent} ${t.description||""}`.toLowerCase().includes(q));
+ }).sort((a,b)=>{
+  const dateDiff=b.date.localeCompare(a.date);if(dateDiff)return dateDiff;
+  return PERIODS.findIndex(p=>p[0]===a.period)-PERIODS.findIndex(p=>p[0]===b.period)||createdAtMillis(b)-createdAtMillis(a);
+ });
 }
 function renderTasks(){
  updateTaskBadge();
  const list=filteredTasks();
+ const focusTomorrow=tomorrowTaskFocusPending;
+ const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);const tomorrowKey=iso(tomorrow),hasTomorrow=list.some(t=>t.date===tomorrowKey);
+ if(tomorrowTaskFocusPending){tomorrowTaskFocusPending=false;requestAnimationFrame(()=>{const el=document.querySelector(`[data-task-day="${tomorrowKey}"]`);if(el)el.scrollIntoView({behavior:"smooth",block:"start"})})}
+ if(focusTomorrow&&!hasTomorrow){
+  const hint=`<div class="empty tomorrow-empty-hint"><i class="fa-regular fa-calendar"></i><strong>Ngày mai chưa có nhiệm vụ</strong><span>Bạn có thể tạo nhiệm vụ mới cho ngày mai.</span></div>`;
+  if(!list.length){$("#taskArea").innerHTML=hint;return}
+  if(view!=="list")$("#taskArea").innerHTML=hint;
+ }
  if(!list.length){$("#taskArea").innerHTML=`<div class="empty"><i class="fa-regular fa-circle-check"></i><strong>Chưa có nhiệm vụ</strong><span>Hãy tạo nhiệm vụ đầu tiên hoặc đổi bộ lọc.</span></div>`;return}
  if(view==="list"){renderList(list);return}
  const groups={};list.forEach(t=>(groups[t.date]??=[]).push(t));
- $("#taskArea").innerHTML=Object.entries(groups).map(([date,arr])=>`<div class="day"><div class="day-head"><div><strong>📌 ${localDate(date).toLocaleDateString("vi-VN",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"})}</strong><small>${arr.length} nhiệm vụ</small></div><span>${arr.filter(t=>(t.completedBy||[]).includes(user.uid)).length}/${arr.length} hoàn thành</span></div>${arr.map(taskHtml).join("")}</div>`).join("");
+ const dates=Object.keys(groups).sort((a,b)=>b.localeCompare(a));
+ const html=dates.map(date=>`<div class="day" data-task-day="${escape(date)}"><div class="day-head"><div><strong>📌 ${localDate(date).toLocaleDateString("vi-VN",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"})}</strong><small>${groups[date].length} nhiệm vụ</small></div><span>${groups[date].filter(t=>(t.completedBy||[]).includes(user.uid)).length}/${groups[date].length} hoàn thành</span></div>${groups[date].map(taskHtml).join("")}</div>`).join("");
+ if(period==="past"&&statusFilter==="all"){
+  const overdue=tasks.filter(t=>{const done=(t.completedBy||[]).includes(user.uid);return !done&&isPeriodEnded(t)}).filter(t=>(uf==="all"||t.createdBy===uf)&&(sf==="all"||t.subject===sf)&&(!q||`${t.subject} ${t.taskContent} ${t.description||""}`.toLowerCase().includes(q))).sort((a,b)=>b.date.localeCompare(a.date)||PERIODS.findIndex(p=>p[0]===a.period)-PERIODS.findIndex(p=>p[0]===b.period));
+  const done= list.filter(t=>(t.completedBy||[]).includes(user.uid));
+  $("#taskArea").innerHTML=`${overdue.length?`<div class="task-section-title">⚠️ Quá hạn (chưa làm)<span>${overdue.length}</span></div>${renderTaskGroupsHtml(overdue)}`:""}${done.length?`<div class="task-section-title">✅ Đã hoàn thành<span>${done.length}</span></div>${renderTaskGroupsHtml(done)}`:""}`||`<div class="empty"><i class="fa-regular fa-circle-check"></i><strong>Chưa có nhiệm vụ đã qua</strong><span>Nhiệm vụ đã hoàn thành sẽ xuất hiện tại đây.</span></div>`;
+ }else $("#taskArea").innerHTML=(focusTomorrow&&!hasTomorrow?`<div class="empty tomorrow-empty-hint"><i class="fa-regular fa-calendar"></i><strong>Ngày mai chưa có nhiệm vụ</strong><span>Bạn có thể tạo nhiệm vụ mới cho ngày mai.</span></div>`:"")+html;
 }
+function renderTaskGroupsHtml(list){const groups={};list.forEach(t=>(groups[t.date]??=[]).push(t));return Object.keys(groups).sort((a,b)=>b.localeCompare(a)).map(date=>`<div class="day" data-task-day="${escape(date)}"><div class="day-head"><div><strong>📌 ${localDate(date).toLocaleDateString("vi-VN",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"})}</strong><small>${groups[date].length} nhiệm vụ</small></div><span>${groups[date].filter(t=>(t.completedBy||[]).includes(user.uid)).length}/${groups[date].length} hoàn thành</span></div>${groups[date].map(taskHtml).join("")}</div>`).join("")}
 function renderList(list){$("#taskArea").innerHTML=`<div class="day">${list.map(taskHtml).join("")}</div>`}
 function taskHtml(t){
  const mine=t.createdBy===user.uid,done=(t.completedBy||[]).includes(user.uid),q=$("#search")?.value.trim()||"",diff=taskDeadlineDate(t)-Date.now(),deadlineIcon=diff<0?"⚠️":diff<=86400000?"⏰":"📅";
@@ -301,7 +324,7 @@ async function createTask(){
  if(scheduleHasDayData(schedule,day)&&schedule[day]?.[p]!==subject)throw new Error("Môn học không khớp với thời khóa biểu chung của ngày/tiết này.");
  if(!deadline)throw new Error("Vui lòng chọn hạn nộp.");
  await addDoc(collection(db,"tasks"),{createdBy:user.uid,authorName:profile?.displayName||user.displayName||"Học sinh",subject,taskContent:content,date,dayOfWeek:day,period:p,startTime:row[1],endTime:row[2],deadline:new Date(deadline).toISOString(),description:$("#taskDescription").value.trim(),points,status:"pending",completedBy:[],completedAt:null,createdAt:serverTimestamp()});
- $("#taskDialog").close();$("#taskForm").reset();setTaskDefaults();toast("Đã tạo nhiệm vụ — mọi người sẽ thấy ngay");checkUpcomingNotifications(true);
+ closeTaskModal();$("#taskForm").reset();setTaskDefaults();toast("Đã tạo nhiệm vụ — mọi người sẽ thấy ngay");checkUpcomingNotifications(true);
 }
 async function completeTask(id){
  const meta=await runTransaction(db,async tx=>{
@@ -355,9 +378,11 @@ $("#nextWeek").onclick=()=>changeWeek(()=>weekStart.setDate(weekStart.getDate()+
 $("#thisWeek").onclick=()=>changeWeek(()=>weekStart=monday(new Date()));
 document.addEventListener("change",e=>{const input=e.target.closest?.(".schedule-input");if(input)syncScheduleInputGroup(input)});
 $("#saveSchedule").onclick=()=>saveSchedule().catch(e=>toast(errorMessage(e)));
-$("#newTask").onclick=()=>{taskDialogReturnFocus=$("#newTask");$("#taskDialog").showModal();setTaskDefaults();setTimeout(()=>$("#taskDate")?.focus(),0)};
-$("#closeDialog").onclick=()=>$("#taskDialog").close();$("#cancelDialog").onclick=()=>$("#taskDialog").close();
-$("#taskDialog").addEventListener("close",()=>{taskDialogReturnFocus?.focus();taskDialogReturnFocus=null});
+function openTaskModal(){taskDialogReturnFocus=$("#newTask");$("#taskModal").classList.remove("hidden");document.body.classList.add("modal-open");setTaskDefaults();setTimeout(()=>$("#taskDate")?.focus(),0)}
+function closeTaskModal(){const modal=$("#taskModal");if(!modal)return;modal.classList.add("hidden");document.body.classList.remove("modal-open");taskDialogReturnFocus?.focus();taskDialogReturnFocus=null}
+$("#newTask").onclick=openTaskModal;
+$("#closeDialog").onclick=closeTaskModal;$("#cancelDialog").onclick=closeTaskModal;
+$("#taskModal").addEventListener("click",e=>{if(e.target.id==="taskModal")closeTaskModal()});
 $("#taskForm").onsubmit=e=>{e.preventDefault();createTask().catch(x=>toast(errorMessage(x)))};
 $("#taskDate").onchange=()=>{const date=$("#taskDate").value;if(!date)return;const next=defaultDeadlineForDate(date),deadline=$("#deadline").value;if(!deadline||deadline===lastDefaultDeadline){$("#deadline").value=next;lastDefaultDeadline=next}syncTaskDropdown().catch(e=>toast(errorMessage(e)))};
 $("#taskSubject").onchange=()=>syncTaskPeriods();
@@ -378,6 +403,6 @@ onAuthStateChanged(auth,async u=>{
  user=u;
  if(u){
   scheduleDirty=false;clearAuthError();$("#auth").classList.add('hidden');$("#app").classList.remove('hidden');$("#headerName").textContent=u.displayName||u.email||"";
-  try{const userRef=doc(db,"users",u.uid),existing=await getDoc(userRef);if(!existing.exists())await setDoc(userRef,{uid:u.uid,email:u.email||"",displayName:u.displayName||u.email?.split('@')[0]||"Học sinh",className:"",points:0,weeklyPoints:0,tasksCompleted:0,streak:0,lastCompletedDate:"",createdAt:serverTimestamp()});await loadProfile();fillSubjects();renderSchedule();await loadUsers();await loadTasks();subscribeRealtime()}catch(e){console.error("Firebase init error:",e);toast(errorMessage(e))}
+  try{const userRef=doc(db,"users",u.uid),existing=await getDoc(userRef);if(!existing.exists())await setDoc(userRef,{uid:u.uid,email:u.email||"",displayName:u.displayName||u.email?.split('@')[0]||"Học sinh",className:"",points:0,weeklyPoints:0,tasksCompleted:0,streak:0,lastCompletedDate:"",createdAt:serverTimestamp()});await loadProfile();fillSubjects();prepareEveningScheduleView();tomorrowTaskFocusPending=new Date().getHours()>=18;renderSchedule();await loadUsers();await loadTasks();subscribeRealtime()}catch(e){console.error("Firebase init error:",e);toast(errorMessage(e))}
  }else{scheduleDirty=false;notificationLastSnapshot="";if(notificationPanelOpen)closeNotifications();scheduleRenderToken++;unsubscribeRealtime();$("#auth").classList.remove('hidden');$("#app").classList.add('hidden');clearAuthError()}
 });
