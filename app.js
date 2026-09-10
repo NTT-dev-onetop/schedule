@@ -10,6 +10,7 @@ const PERIODS=[
  ["Chiều - Tiết 1","13:40","14:25","Chiều","1"],["Chiều - Tiết 2","14:25","15:10","Chiều","2"],["Chiều - Tiết 3","15:15","16:00","Chiều","3"],["Chiều - Tiết 4","16:00","16:45","Chiều","4"]
 ];
 const SUBJECTS=["Toán","Ngữ văn","Tiếng Anh","Vật lý","Hóa học","Sinh học","Lịch sử","Thể dục","GDQP","HDTN","KTPL"];
+const ALLOWED_CLASSES=["11A0","11T1"];
 let notificationTimer=null,notificationLastSnapshot="",notificationPanelOpen=false,taskDialogReturnFocus=null,lastDefaultDeadline="",lastCompletionUndo=null,tomorrowTaskFocusPending=false,appLoaderTimeout=null;
 let user=null,profile=null,classId="",myClassIds=[],weekStart=monday(new Date()),tasks=[],users=[],view="board",period="current",statusFilter="all",searchTimer=null,currentSchedule={},taskSchedule={},unsubs=[],scheduleUnsub=null,scheduleListenerKey=null,scheduleRenderToken=0,scheduleDirty=false,tasksLoaded=false,mobileDayIndex=Math.max(0,Math.min(5,new Date().getDay()-1));
 
@@ -263,10 +264,11 @@ function subscribeRealtime(){
  // One shared realtime lifecycle. Schedule is subscribed here once; week navigation replaces only its schedule listener.
  subscribeScheduleRealtime(iso(weekStart),scheduleRenderToken);
  unsubs.push(onSnapshot(query(classTasksCollection(),orderBy("date","asc")),snap=>{
+   console.log("[tasks] snapshot",classId,snap.size,snap.docs.length);
    tasks=snap.docs.map(d=>({id:d.id,...d.data()}));
    tasksLoaded=true;
     renderTasks();renderScheduleTaskDropdowns();updateTaskBadge();checkUpcomingNotifications();
- },e=>{console.warn("task listener",e);tasksLoaded=true;renderTasks();toast(`Không thể đồng bộ nhiệm vụ: ${errorMessage(e)}`)}));
+ },e=>{console.error("[tasks] error",classId,e.code,e.message);console.warn("task listener",e);tasksLoaded=true;renderTasks();toast(`Không thể đồng bộ nhiệm vụ: ${errorMessage(e)}`)}));
  unsubs.push(onSnapshot(query(collection(db,"users"),where("classIds","array-contains",classId)),snap=>{
    users=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.displayName||a.email||"").localeCompare(String(b.displayName||b.email||""),"vi"));
    $("#userFilter").innerHTML=`<option value="all">Tất cả người dùng</option>`+users.map(u=>`<option value="${escape(u.uid)}">${escape(u.displayName||u.email||"Học sinh")}</option>`).join("");
@@ -368,11 +370,11 @@ async function deleteTask(id){if(!confirm("Xóa nhiệm vụ này?"))return;awai
 function updateClassSwitcher(){
  const wrap=$("#classSwitcher"),name=$("#activeClassName"),menu=$("#classMenu"); if(!wrap||!menu)return;
  wrap.classList.toggle("hidden",!user||!myClassIds.length); if(name)name.textContent=classDisplayName(classId);
- menu.innerHTML=myClassIds.map(id=>`<button type="button" class="class-menu-item ${id===classId?"active":""}" data-class-id="${escape(id)}"><i class="fa-solid fa-school"></i><span>${escape(id)}</span>${id===classId?`<i class="fa-solid fa-check"></i>`:""}</button>`).join("")+`<button type="button" class="class-menu-add" data-add-class="1"><i class="fa-solid fa-plus"></i> Tham gia lớp khác</button>`;
+ menu.innerHTML=myClassIds.map(id=>`<button type="button" class="class-menu-item ${id===classId?"active":""}" data-class-id="${escape(id)}"><i class="fa-solid fa-school"></i><span>${escape(id)}</span>${id===classId?`<i class="fa-solid fa-check"></i>`:""}</button>`).join("")+(myClassIds.length<ALLOWED_CLASSES.length?`<button type="button" class="class-menu-add" data-add-class="1"><i class="fa-solid fa-plus"></i> Tham gia lớp khác</button>`:"");
 }
-function openClassPicker(){const el=$("#classPicker");if(!el)return;el.classList.remove("hidden");document.body.classList.add("modal-open");setTimeout(()=>$("#classIdInput")?.focus(),0)}
+function openClassPicker(){const el=$("#classPicker");if(!el)return;el.classList.remove("hidden");document.body.classList.add("modal-open");setTimeout(()=>$("[data-class-pick]")?.focus(),0)}
 function closeClassPicker(){const el=$("#classPicker");if(!el)return;el.classList.add("hidden");document.body.classList.remove("modal-open")}
-async function addClassMembership(raw){const id=normalizeClassId(raw);if(!id)throw new Error("Nhập mã lớp, ví dụ 11T1.");if(myClassIds.includes(id)){await setActiveClass(id);return;} const next=[...myClassIds,id];await updateDoc(doc(db,"users",user.uid),{classIds:next,activeClassId:id});myClassIds=next;profile={...profile,classIds:next,activeClassId:id};closeClassPicker();await setActiveClass(id,false);toast(`✓ Đã tham gia lớp ${id}`);}
+async function addClassMembership(raw){const id=normalizeClassId(raw);if(!id)throw new Error("Chưa chọn lớp.");if(!ALLOWED_CLASSES.includes(id))throw new Error("Lớp này không tồn tại. Chỉ có 11A0 và 11T1.");if(myClassIds.includes(id)){await setActiveClass(id);return;} const next=[...myClassIds,id];await updateDoc(doc(db,"users",user.uid),{classIds:next,activeClassId:id});myClassIds=next;profile={...profile,classIds:next,activeClassId:id};closeClassPicker();await setActiveClass(id,false);toast(`✓ Đã tham gia lớp ${id}`);}
 async function setActiveClass(nextId,save=true){
  const id=normalizeClassId(nextId); if(!id||!myClassIds.includes(id)||id===classId)return;
  if(save)await updateDoc(doc(db,"users",user.uid),{activeClassId:id});
@@ -455,6 +457,9 @@ onAuthStateChanged(auth,async u=>{
 $("#classSwitcherBtn")?.addEventListener("click",()=>$("#classMenu")?.classList.toggle("hidden"));
 $("#classMenu")?.addEventListener("click",e=>{const item=e.target.closest("[data-class-id]");if(item)setActiveClass(item.dataset.classId).catch(x=>toast(errorMessage(x)));if(e.target.closest("[data-add-class]")){$("#classMenu").classList.add("hidden");openClassPicker()}});
 $("#closeClassPicker")?.addEventListener("click",closeClassPicker);$("#cancelClassPicker")?.addEventListener("click",closeClassPicker);
-$("#classPicker")?.addEventListener("click",e=>{if(e.target.id==="classPicker")closeClassPicker()});
-$("#classPickerForm")?.addEventListener("submit",e=>{e.preventDefault();addClassMembership($("#classIdInput").value).then(()=>$("#classIdInput").value="").catch(x=>toast(errorMessage(x)))});
+$("#classPicker")?.addEventListener("click",e=>{
+ const btn=e.target.closest("[data-class-pick]");
+ if(btn){addClassMembership(btn.dataset.classPick).then(()=>toast(`✓ Đã vào lớp ${btn.dataset.classPick}`)).catch(x=>toast(errorMessage(x)));return;}
+ if(e.target.id==="classPicker")closeClassPicker();
+});
 document.addEventListener("click",e=>{if(!e.target.closest("#classSwitcher"))$("#classMenu")?.classList.add("hidden")});
