@@ -36,9 +36,14 @@ async function registerMobilePush(){
     const permission=await Notification.requestPermission();
     if(permission!=="granted"){toast("Bạn chưa cho phép thông báo trên điện thoại.");return false;}
     const token=await getToken(messaging,{vapidKey:MOBILE_VAPID_KEY,serviceWorkerRegistration:messagingRegistration});
-    if(!token) throw new Error("Không lấy được FCM token");
+    if(!token) throw new Error("FCM không cấp token. Hãy kiểm tra quyền thông báo và Firebase Cloud Messaging.");
     const tokenId=btoa(token).replace(/[^a-zA-Z0-9_-]/g,"").slice(0,120);
-    await setDoc(doc(db,"users",user.uid,"fcmTokens",tokenId),{token,platform:"mobile-web",userAgent:navigator.userAgent,updatedAt:serverTimestamp()},{merge:true});
+    try {
+      await setDoc(doc(db,"users",user.uid,"fcmTokens",tokenId),{token,platform:"mobile-web",userAgent:navigator.userAgent,updatedAt:serverTimestamp()},{merge:true});
+    } catch(storageError) {
+      if(storageError?.code==="permission-denied") throw new Error("Firestore từ chối lưu FCM token. Hãy deploy firestore.rules của bản này lên project t1-myschedule.");
+      throw storageError;
+    }
     mobilePushReady=true;
     const btn=$("#enableDesktopNotifications"); if(btn) btn.innerHTML='<i class="fa-solid fa-bell"></i> Đã bật thông báo điện thoại';
     toast("✓ Đã bật thông báo trên điện thoại",{duration:3500});
