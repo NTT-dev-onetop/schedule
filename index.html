@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0A58CA">
 <meta name="description" content="SchoolTask - Quản lý thời khóa biểu và nhiệm vụ học tập">
-<link rel="manifest" href="./manifest.webmanifest">
 <title>SchoolTask - 11T1</title>
 <link rel="icon" type="image/png" href="./img/tải xuống.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,7 +19,7 @@
 <div id="notificationPanel" class="notification-panel" aria-hidden="true">
   <div class="notification-head"><div><strong>🔔 Thông báo</strong><small id="notificationSummary">Nhiệm vụ sắp tới</small></div><button id="closeNotifications" class="icon" type="button" aria-label="Đóng">×</button></div>
   <div id="notificationList" class="notification-list"></div>
-  <div class="notification-foot"><button id="enableDesktopNotifications" class="btn ghost full" type="button"><i class="fa-regular fa-bell"></i> Bật thông báo màn hình</button></div>
+  <div class="notification-foot"><button id="enableDesktopNotifications" class="btn ghost full" type="button"><i class="fa-regular fa-bell"></i> Bật thông báo trên điện thoại</button></div>
 </div>
 <div id="taskAlert" class="task-alert" role="status" aria-live="polite" aria-hidden="true"></div>
 <section id="auth" class="auth-page">
@@ -31,7 +30,7 @@
 <header class="topbar">
   <div class="brand"><i class="fa-solid fa-graduation-cap"></i><span>SchoolTask</span></div>
   <div class="topbar-title"><span>Quản lý nhiệm vụ học tập</span><span id="syncStatus" class="sync-status online"><i class="fa-solid fa-wifi"></i> Đang đồng bộ</span></div>
-  <div class="user"><button id="notificationBtn" class="notification-btn" title="Thông báo" aria-label="Thông báo"><i class="fa-regular fa-bell"></i><span id="notificationBadge" class="notification-badge hidden">0</span></button><span id="headerName">Học sinh</span><button id="logout" class="icon" title="Đăng xuất" aria-label="Đăng xuất"><i class="fa-solid fa-right-from-bracket"></i></button></div>
+  <div class="user"><button id="notificationBtn" class="notification-btn" title="Thông báo điện thoại" aria-label="Thông báo"><i class="fa-regular fa-bell"></i><span id="notificationBadge" class="notification-badge hidden">0</span></button><span id="headerName">Học sinh</span><button id="logout" class="icon" title="Đăng xuất" aria-label="Đăng xuất"><i class="fa-solid fa-right-from-bracket"></i></button></div>
 </header>
 <div class="app-layout">
 <aside class="sidebar">
@@ -64,7 +63,6 @@
 </div>
 
 <div id="taskModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="taskModalTitle"><form id="taskForm" class="modal-card"><div class="dialog-head"><div><span class="eyebrow">TẠO MỚI</span><h2 id="taskModalTitle">Tạo nhiệm vụ</h2></div><button id="closeDialog" type="button" class="icon">×</button></div><p class="dialog-note"><i class="fa-solid fa-link"></i> Chọn ngày → môn trong thời khóa biểu → tiết học.</p><p id="taskScheduleNote" class="dialog-warning hidden" role="alert"></p><div class="form-grid"><label>Ngày<input id="taskDate" type="date" required></label><label>Môn học<select id="taskSubject" required></select></label><label>Tiết học<select id="taskPeriod" required></select></label><label>Hạn nộp<input id="deadline" type="datetime-local" required></label><label class="points-field">Điểm<input id="taskPoints" type="number" min="0" max="100" value="10" required></label><label class="wide">Nhiệm vụ<textarea id="taskContent" rows="3" maxlength="500" placeholder="Ví dụ: Làm bài tập trang 25–27" required></textarea></label><label class="wide">Mô tả<textarea id="taskDescription" rows="2" maxlength="1000" placeholder="Ghi chú thêm (nếu có)"></textarea></label></div><div class="dialog-actions"><button id="cancelDialog" type="button" class="btn ghost">Hủy</button><button id="saveTaskBtn" class="btn primary" type="submit"><i class="fa-solid fa-check"></i> Lưu nhiệm vụ</button></div></form></div>
-<script>if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./firebase-messaging-sw.js",{scope:"./"}).catch(console.warn));</script>
 <script type="module" src="./app.js"></script>
 </body>
 </html>

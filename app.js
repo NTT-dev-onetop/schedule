@@ -1,12 +1,12 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import { getAuth,onAuthStateChanged,GoogleAuthProvider,signInWithPopup,signOut } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-import { getMessaging,isSupported,getToken,onMessage } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging.js";
 import { getFirestore,doc,getDoc,setDoc,updateDoc,addDoc,collection,query,orderBy,getDocs,runTransaction,serverTimestamp,arrayUnion,arrayRemove,deleteDoc,onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { getMessaging, getToken, onMessage, deleteToken } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging.js";
 import { firebaseConfig } from "./firebase-config.js";
-import { VAPID_KEY } from "./notification-config.js";
 
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app),provider=new GoogleAuthProvider();
-let messaging=null,notificationSwRegistration=null;
+let messaging=null, messagingRegistration=null, mobilePushReady=false;
+try { if ("serviceWorker" in navigator && "Notification" in window) messaging=getMessaging(app); } catch(e){ console.warn("FCM unavailable",e); }
 const DAYS=["Thứ 2","Thứ 3","Thứ 4","Thứ 5","Thứ 6","Thứ 7"];
 const PERIODS=[
  ["Sáng - Tiết 1","06:55","07:40","Sáng","1"],["Sáng - Tiết 2","07:45","08:30","Sáng","2"],["Sáng - Tiết 3","08:55","09:40","Sáng","3"],["Sáng - Tiết 4","09:45","10:30","Sáng","4"],["Sáng - Tiết 5","10:35","11:20","Sáng","5"],
@@ -27,52 +27,44 @@ function showAuthError(msg){const e=$("#authErr");if(e){e.textContent=msg;e.clas
 function clearAuthError(){const e=$("#authErr");if(e){e.textContent="";e.classList.add("hidden")}}
 function toast(msg,options={}){const e=$("#toast");if(!e)return;clearTimeout(e._t);e.innerHTML=`<span>${escape(msg)}</span>${options.actionText?`<button type="button" class="toast-action">${escape(options.actionText)}</button>`:""}`;e.classList.add("show");const a=e.querySelector(".toast-action");if(a)a.onclick=async()=>{a.disabled=true;try{await options.onAction?.()}catch(x){toast(errorMessage(x))}finally{e.classList.remove("show")}};e._t=setTimeout(()=>e.classList.remove("show"),options.duration||2600)}
 function notificationKey(t,kind="soon"){return `${t.id}:${kind}:${t.deadline||t.date}`}
+const MOBILE_VAPID_KEY="PASTE_YOUR_FIREBASE_WEB_PUSH_VAPID_PUBLIC_KEY_HERE";
+async function registerMobilePush(){
+  if(!messaging || !user || !("serviceWorker" in navigator) || !("Notification" in window)) return false;
+  if(MOBILE_VAPID_KEY.startsWith("PASTE_")){ toast("Thiếu VAPID key Firebase — xem README để cấu hình thông báo điện thoại.", {duration:4500}); return false; }
+  try{
+    messagingRegistration=await navigator.serviceWorker.register("./firebase-messaging-sw.js",{scope:"./"});
+    const permission=await Notification.requestPermission();
+    if(permission!=="granted"){toast("Bạn chưa cho phép thông báo trên điện thoại.");return false;}
+    const token=await getToken(messaging,{vapidKey:MOBILE_VAPID_KEY,serviceWorkerRegistration:messagingRegistration});
+    if(!token) throw new Error("Không lấy được FCM token");
+    const tokenId=btoa(token).replace(/[^a-zA-Z0-9_-]/g,"").slice(0,120);
+    await setDoc(doc(db,"users",user.uid,"fcmTokens",tokenId),{token,platform:"mobile-web",userAgent:navigator.userAgent,updatedAt:serverTimestamp()},{merge:true});
+    mobilePushReady=true;
+    const btn=$("#enableDesktopNotifications"); if(btn) btn.innerHTML='<i class="fa-solid fa-bell"></i> Đã bật thông báo điện thoại';
+    toast("✓ Đã bật thông báo trên điện thoại",{duration:3500});
+    return true;
+  }catch(e){console.error("Mobile FCM setup",e);toast("Không thể bật thông báo điện thoại: "+errorMessage(e),{duration:5000});return false;}
+}
+function setupForegroundPush(){
+  if(!messaging)return;
+  onMessage(messaging,payload=>{
+    const n=payload.notification||{};
+    const data=payload.data||{};
+    const title=n.title||data.title||"🔔 SchoolTask";
+    const body=n.body||data.body||"Bạn có thông báo mới.";
+    showTaskAlert({taskContent:body,subject:title,deadline:new Date().toISOString()});
+    renderNotificationPanel();
+  });
+}
 function taskDeadlineDate(t){const d=t?.deadline?new Date(t.deadline):localDate(t?.date||iso(new Date()));return Number.isNaN(d.getTime())?localDate(t?.date||iso(new Date())):d}
 function taskTimeLabel(t){const diff=taskDeadlineDate(t)-Date.now(),abs=Math.abs(diff);if(diff<0){const h=Math.floor(abs/3600000),m=Math.floor((abs%3600000)/60000);return h>=24?`Quá hạn ${Math.floor(h/24)} ngày`:h?`Quá hạn ${h} giờ`:`Quá hạn ${Math.max(1,m)} phút`}if(diff<3600000)return `Còn ${Math.max(1,Math.floor(diff/60000))} phút`;if(diff<86400000)return `Còn ${Math.floor(diff/3600000)} giờ`;if(diff<172800000)return "Ngày mai";return `Còn ${Math.ceil(diff/86400000)} ngày`}
 function upcomingTasks(){const now=Date.now(),limit=now+7*86400000;return tasks.filter(t=>t.status!=="completed"||!(t.completedBy||[]).includes(user?.uid)).filter(t=>{const d=taskDeadlineDate(t).getTime();return d>=now-86400000&&d<=limit}).sort((a,b)=>taskDeadlineDate(a)-taskDeadlineDate(b))}
 function renderNotificationPanel(){const list=$("#notificationList"),badge=$("#notificationBadge"),summary=$("#notificationSummary");if(!list)return;const items=upcomingTasks();if(badge){badge.textContent=Math.min(items.length,99);badge.classList.toggle("hidden",!items.length)}if(summary)summary.textContent=items.length?`${items.length} nhiệm vụ trong 7 ngày tới`:"Không có nhiệm vụ sắp tới";list.innerHTML=items.length?items.map(t=>{const d=taskDeadlineDate(t),urgent=d-Date.now()<=86400000;return `<button class="notification-item ${urgent?"urgent":""}" data-notification-task="${escape(t.id)}" type="button"><span class="notification-icon">${urgent?"⏰":"📚"}</span><span class="notification-content"><strong>${escape(t.taskContent||"Nhiệm vụ")}</strong><small>${escape(t.subject||"")} · ${taskTimeLabel(t)} · ${d.toLocaleString("vi-VN",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</small></span></button>`}).join(""): `<div class="notification-empty"><span>✨</span><strong>Không có nhiệm vụ sắp tới</strong><small>Những nhiệm vụ trong 7 ngày tới sẽ xuất hiện ở đây.</small></div>`}
 function showTaskAlert(t){const e=$("#taskAlert");if(!e)return;const d=taskDeadlineDate(t),urgent=d-Date.now()<=86400000;e.innerHTML=`<div class="task-alert-icon">${urgent?"⏰":"🔔"}</div><div class="task-alert-body"><strong>Nhiệm vụ sắp tới</strong><span>${escape(t.taskContent||"Nhiệm vụ")} · ${escape(t.subject||"")}</span><small>${taskTimeLabel(t)} · hạn ${d.toLocaleString("vi-VN",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</small></div><button class="task-alert-close" type="button" aria-label="Đóng">×</button>`;e.classList.add("show");e.setAttribute("aria-hidden","false");clearTimeout(e._t);e._t=setTimeout(hideTaskAlert,7000);e.querySelector(".task-alert-close")?.addEventListener("click",hideTaskAlert,{once:true})}
 function hideTaskAlert(){const e=$("#taskAlert");if(!e)return;e.classList.remove("show");e.setAttribute("aria-hidden","true")}
-async function notificationTokenId(token){const data=new TextEncoder().encode(token);const hash=await crypto.subtle.digest("SHA-256",data);return [...new Uint8Array(hash)].map(x=>x.toString(16).padStart(2,"0")).join("").slice(0,40)}
-async function initForegroundPush(){
- if(!user||!VAPID_KEY||VAPID_KEY.includes("PASTE_YOUR"))return;
- try{
-  if(!(await isSupported()))return;
-  messaging=getMessaging(app);
-  if(!navigator.serviceWorker)return;
-  notificationSwRegistration=await navigator.serviceWorker.register("./firebase-messaging-sw.js",{scope:"./"});
-  onMessage(messaging,payload=>{
-   const n=payload.notification||{},data=payload.data||{};
-   const t=tasks.find(x=>x.id===data.taskId);
-   if(t)showTaskAlert(t);else if(n.title)toast(`${n.title}${n.body?" — "+n.body:""}`,{duration:7000});
-  });
- }catch(e){console.warn("Push init skipped:",e)}
-}
-
-function browserNotify(t){if(!("Notification"in window)||Notification.permission!=="granted")return;const d=taskDeadlineDate(t);new Notification(`🔔 ${taskTimeLabel(t)}: ${t.subject||"Nhiệm vụ"}`,{body:`${t.taskContent||"Có nhiệm vụ sắp tới"} · Hạn ${d.toLocaleString("vi-VN",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}`,tag:`schooltask-${t.id}`})}
+function browserNotify(t){/* Mobile-only: background notifications are handled by FCM service worker. */}
 function checkUpcomingNotifications(force=false){if(!user)return;renderNotificationPanel();const items=upcomingTasks(),snapshot=items.map(t=>`${t.id}:${t.deadline}:${t.taskContent}`).join("|");if(!force&&snapshot===notificationLastSnapshot)return;notificationLastSnapshot=snapshot;items.forEach(t=>{const d=taskDeadlineDate(t),hours=(d-Date.now())/3600000;if(hours<0||hours>168)return;const key=notificationKey(t,"popup"),shown=localStorage.getItem(`schooltask-notify:${key}`);if(shown)return;localStorage.setItem(`schooltask-notify:${key}`,String(Date.now()));showTaskAlert(t);browserNotify(t)})}
-async function enableDesktopNotifications(){
- if(!user)return;
- if(!window.isSecureContext){toast("Thông báo ngoài web cần HTTPS (hoặc localhost).");return}
- if(!("Notification"in window)){toast("Trình duyệt này không hỗ trợ thông báo màn hình.");return}
- if(!VAPID_KEY||VAPID_KEY.includes("PASTE_YOUR")){toast("Chưa cấu hình VAPID key trong notification-config.js");return}
- const permission=await Notification.requestPermission();
- if(permission!=="granted"){toast("Bạn chưa cấp quyền thông báo màn hình.");return}
- if(!messaging){
-  const supported=await isSupported().catch(()=>false);
-  if(!supported){toast("Thiết bị/trình duyệt này chưa hỗ trợ Push Notification.");return}
-  messaging=getMessaging(app);
- }
- notificationSwRegistration=await navigator.serviceWorker.register("./firebase-messaging-sw.js",{scope:"./"});
- const token=await getToken(messaging,{vapidKey:VAPID_KEY,serviceWorkerRegistration:notificationSwRegistration});
- if(!token)throw new Error("Không lấy được FCM token.");
- const tokenId=await notificationTokenId(token);
- await setDoc(doc(db,"users",user.uid,"notificationTokens",tokenId),{token,uid:user.uid,updatedAt:serverTimestamp(),userAgent:navigator.userAgent.slice(0,300)},{merge:true});
- localStorage.setItem("schooltask-push-enabled","1");
- $("#enableDesktopNotifications").innerHTML='<i class="fa-solid fa-bell"></i> Đã bật thông báo ngoài web';
- toast("✓ Đã bật thông báo ngoài web — có thể hiện khi khóa màn hình");
- checkUpcomingNotifications(true);
-}
+async function enableDesktopNotifications(){return registerMobilePush()}
 function openNotifications(){notificationPanelOpen=true;$("#notificationPanel")?.classList.add("show");$("#notificationPanel")?.setAttribute("aria-hidden","false");renderNotificationPanel()}
 function closeNotifications(){notificationPanelOpen=false;$("#notificationPanel")?.classList.remove("show");$("#notificationPanel")?.setAttribute("aria-hidden","true")}
 function setSyncStatus(kind="online",text="Đang đồng bộ"){
@@ -447,7 +439,7 @@ $("#taskArea").onclick=e=>{const c=e.target.closest('[data-complete]'),d=e.targe
 $("#profileForm").onsubmit=e=>{e.preventDefault();saveProfile().catch(x=>toast(errorMessage(x)))};
 $("#refreshRank")?.addEventListener("click",()=>leaderboard().catch(e=>toast(errorMessage(e))));
 $("#mobileDaySelector")?.addEventListener("click",e=>{const b=e.target.closest("[data-mobile-day]");if(!b)return;mobileDayIndex=Number(b.dataset.mobileDay);renderMobileSchedule();renderScheduleTaskDropdowns()});
-window.addEventListener("online",updateOnlineStatus);window.addEventListener("offline",updateOnlineStatus);updateOnlineStatus();notificationTimer=setInterval(()=>checkUpcomingNotifications(),60000);
+window.addEventListener("online",updateOnlineStatus);window.addEventListener("offline",updateOnlineStatus);updateOnlineStatus();notificationTimer=setInterval(()=>checkUpcomingNotifications(),60000);setupForegroundPush();
 
 onAuthStateChanged(auth,async u=>{
  user=u;
@@ -459,7 +451,8 @@ onAuthStateChanged(auth,async u=>{
    const userRef=doc(db,"users",u.uid),existing=await getDoc(userRef);
    if(!existing.exists())await setDoc(userRef,{uid:u.uid,email:u.email||"",displayName:u.displayName||u.email?.split('@')[0]||"Học sinh",className:"",points:0,weeklyPoints:0,tasksCompleted:0,streak:0,lastCompletedDate:"",createdAt:serverTimestamp()});
    await loadProfile();
-   await initForegroundPush();
+   // Restore mobile push for this signed-in device when permission/token already exists.
+   if(messaging && "Notification" in window && Notification.permission==="granted") registerMobilePush().catch(()=>{});
    fillSubjects();
    await syncTaskDropdown().catch(()=>{});
    prepareEveningScheduleView();
@@ -467,15 +460,6 @@ onAuthStateChanged(auth,async u=>{
    renderSchedule();
    subscribeRealtime();
    await Promise.all([loadUsers(),loadTasks(),taskSnapshotPromise]);
-   const taskFromPush=new URLSearchParams(location.search).get("task");
-   if(taskFromPush){
-    history.replaceState({},"",location.pathname+location.hash);
-    setTimeout(()=>{
-     if(!switchTab("tasks"))return;
-     const card=document.querySelector(`[data-task-card="${CSS.escape(taskFromPush)}"]`);
-     if(card){card.scrollIntoView({behavior:"smooth",block:"center"});card.classList.add("pulse-highlight");setTimeout(()=>card.classList.remove("pulse-highlight"),2200)}
-    },120);
-   }
    hideAppLoader();
   }catch(e){console.error("Firebase init error:",e);toast(errorMessage(e));hideAppLoader()}
  }else{

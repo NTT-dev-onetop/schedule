@@ -1,9 +1,10 @@
 {
-  "name":"SchoolTask – Thời khóa biểu & nhiệm vụ",
+  "name":"SchoolTask",
   "short_name":"SchoolTask",
-  "start_url":"./index.html",
+  "start_url":"./",
   "display":"standalone",
-  "background_color":"#f8fafc",
+  "background_color":"#ffffff",
   "theme_color":"#0A58CA",
-  "icons":[{"src":"./img/tải xuống.png","sizes":"192x192","type":"image/png"}]
+  "description":"Quản lý thời khóa biểu và nhiệm vụ học tập",
+  "icons":[]
 }

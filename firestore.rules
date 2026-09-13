@@ -8,6 +8,9 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create, update: if signedIn() && request.auth.uid == uid;
       allow delete: if signedIn() && request.auth.uid == uid;
+      match /fcmTokens/{tokenId} {
+        allow read, create, update, delete: if signedIn() && request.auth.uid == uid;
+      }
     }
 
     // ONE shared schedule per week. Any signed-in user may update it;
@@ -22,11 +25,6 @@ service cloud.firestore {
       allow create: if signedIn() && request.resource.data.createdBy == request.auth.uid;
       allow update: if signedIn();
       allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
-    }
-
-    match /users/{uid}/notificationTokens/{tokenId} {
-      allow read: if signedIn() && request.auth.uid == uid;
-      allow create, update, delete: if signedIn() && request.auth.uid == uid;
     }
 
     match /rankings/{weekId} {
