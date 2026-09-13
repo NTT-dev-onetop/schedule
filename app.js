@@ -32,7 +32,7 @@ async function registerMobilePush(){
   if(!messaging || !user || !("serviceWorker" in navigator) || !("Notification" in window)) return false;
   if(MOBILE_VAPID_KEY.startsWith("PASTE_")){ toast("Thiếu VAPID key Firebase — xem README để cấu hình thông báo điện thoại.", {duration:4500}); return false; }
   try{
-    messagingRegistration=await navigator.serviceWorker.register("./firebase-messaging-sw.js",{scope:"./"});
+    messagingRegistration=await navigator.serviceWorker.register("/firebase-messaging-sw.js",{scope:"/"});
     const permission=await Notification.requestPermission();
     if(permission!=="granted"){toast("Bạn chưa cho phép thông báo trên điện thoại.");return false;}
     const token=await getToken(messaging,{vapidKey:MOBILE_VAPID_KEY,serviceWorkerRegistration:messagingRegistration});
