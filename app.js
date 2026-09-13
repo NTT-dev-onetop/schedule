@@ -27,7 +27,7 @@ function showAuthError(msg){const e=$("#authErr");if(e){e.textContent=msg;e.clas
 function clearAuthError(){const e=$("#authErr");if(e){e.textContent="";e.classList.add("hidden")}}
 function toast(msg,options={}){const e=$("#toast");if(!e)return;clearTimeout(e._t);e.innerHTML=`<span>${escape(msg)}</span>${options.actionText?`<button type="button" class="toast-action">${escape(options.actionText)}</button>`:""}`;e.classList.add("show");const a=e.querySelector(".toast-action");if(a)a.onclick=async()=>{a.disabled=true;try{await options.onAction?.()}catch(x){toast(errorMessage(x))}finally{e.classList.remove("show")}};e._t=setTimeout(()=>e.classList.remove("show"),options.duration||2600)}
 function notificationKey(t,kind="soon"){return `${t.id}:${kind}:${t.deadline||t.date}`}
-const MOBILE_VAPID_KEY="PASTE_YOUR_FIREBASE_WEB_PUSH_VAPID_PUBLIC_KEY_HERE";
+const MOBILE_VAPID_KEY="PABN2sKTAG8c8TrDRgmuW14DDBQ0tYTKvJykRjBnRcwovST5ZrOMHTK2bVydP1efDBiydti05QOnjlEF3kE5260Dc";
 async function registerMobilePush(){
   if(!messaging || !user || !("serviceWorker" in navigator) || !("Notification" in window)) return false;
   if(MOBILE_VAPID_KEY.startsWith("PASTE_")){ toast("Thiếu VAPID key Firebase — xem README để cấu hình thông báo điện thoại.", {duration:4500}); return false; }
